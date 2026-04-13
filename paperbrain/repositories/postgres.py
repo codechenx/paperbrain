@@ -183,12 +183,12 @@ class PostgresRepo:
                         0
                     )::float AS keyword_rank,
                     COALESCE(
-                        MAX(1 - (e.embedding <=> %s::vector)),
+                        MAX(COALESCE(1 - (e.embedding <=> %s::vector), 0)),
                         0
                     )::float AS vector_rank
                 FROM papers p
                 JOIN paper_chunks c ON c.paper_id = p.id
-                JOIN paper_embeddings e ON e.chunk_id = c.id
+                LEFT JOIN paper_embeddings e ON e.chunk_id = c.id
                 GROUP BY p.slug
             )
             SELECT paper_slug, keyword_rank, vector_rank

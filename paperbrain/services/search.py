@@ -1,4 +1,4 @@
-import hashlib
+import math
 from typing import Protocol
 
 
@@ -6,17 +6,26 @@ def hybrid_score(keyword_rank: float, vector_rank: float, alpha: float = 0.6) ->
     return round(alpha * keyword_rank + (1.0 - alpha) * vector_rank, 2)
 
 
-def deterministic_query_vector(query: str, dimensions: int = 1536) -> list[float]:
-    vector: list[float] = []
-    seed = query.encode("utf-8")
-    while len(vector) < dimensions:
-        seed = hashlib.sha256(seed).digest()
-        for index in range(0, len(seed), 4):
-            value = int.from_bytes(seed[index : index + 4], byteorder="big", signed=False)
-            vector.append((value % 10_000) / 10_000.0)
-            if len(vector) == dimensions:
-                break
-    return vector
+QUERY_VECTOR_DIMENSIONS = 1536
+
+
+def _validate_query_vector(query_vector: list[float]) -> list[float]:
+    if len(query_vector) != QUERY_VECTOR_DIMENSIONS:
+        raise ValueError(f"query vector must contain exactly {QUERY_VECTOR_DIMENSIONS} values")
+
+    normalized: list[float] = []
+    for value in query_vector:
+        if isinstance(value, bool):
+            raise ValueError("query vector must contain only finite float values")
+        try:
+            normalized_value = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("query vector must contain only finite float values") from exc
+        if not math.isfinite(normalized_value):
+            raise ValueError("query vector must contain only finite float values")
+        normalized.append(normalized_value)
+
+    return normalized
 
 
 class SearchEmbedder(Protocol):
@@ -45,12 +54,12 @@ class SearchService:
 
     def search(self, query: str, top_k: int = 10, include_cards: bool = False) -> list[dict]:
         if self.embedder is None:
-            query_vector = deterministic_query_vector(query)
-        else:
-            query_embeddings = self.embedder.embed([query])
-            if not query_embeddings:
-                return []
-            query_vector = query_embeddings[0]
+            raise RuntimeError("SearchService requires an embedder for openai-full hybrid search")
+
+        query_embeddings = self.embedder.embed([query])
+        if not query_embeddings:
+            raise ValueError("embedder returned no query vectors")
+        query_vector = _validate_query_vector(query_embeddings[0])
 
         rows = self.repo.search_hybrid(query, query_vector, top_k)
         paper_slugs = [row["paper_slug"] for row in rows]

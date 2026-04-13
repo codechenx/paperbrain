@@ -1,6 +1,8 @@
 from collections.abc import Sequence
 from typing import Any
 
+import pytest
+
 from paperbrain.repositories.postgres import PostgresRepo
 from paperbrain.services.search import SearchService, hybrid_score
 
@@ -73,6 +75,13 @@ class FakeEmbedder:
         return [self.vector]
 
 
+def _make_vector(first: float, second: float) -> list[float]:
+    vector = [0.0] * 1536
+    vector[0] = first
+    vector[1] = second
+    return vector
+
+
 def test_hybrid_score_blends_keyword_and_vector() -> None:
     assert hybrid_score(keyword_rank=0.8, vector_rank=0.2, alpha=0.6) == 0.56
 
@@ -89,13 +98,14 @@ def test_browse_delegates_to_repository() -> None:
 
 def test_search_include_cards_appends_related_cards() -> None:
     repo = FakeSearchRepo()
-    embedder = FakeEmbedder([0.12, 0.34])
+    expected_vector = _make_vector(0.12, 0.34)
+    embedder = FakeEmbedder(expected_vector)
     service = SearchService(repo=repo, embedder=embedder)
 
     rows = service.search("p53", top_k=1, include_cards=True)
 
     assert embedder.calls == [["p53"]]
-    assert repo.search_calls == [("p53", [0.12, 0.34], 1)]
+    assert repo.search_calls == [("p53", expected_vector, 1)]
     assert repo.related_calls == [["papers/a"]]
     assert rows[0]["score"] == 0.56
     assert rows[0]["cards"][0]["slug"] == "people/alice"
@@ -103,35 +113,47 @@ def test_search_include_cards_appends_related_cards() -> None:
 
 def test_search_without_include_cards_skips_related_lookup() -> None:
     repo = FakeSearchRepo()
-    embedder = FakeEmbedder([0.4, 0.6])
+    expected_vector = _make_vector(0.4, 0.6)
+    embedder = FakeEmbedder(expected_vector)
     service = SearchService(repo=repo, embedder=embedder)
 
     rows = service.search("p53", top_k=1, include_cards=False)
 
     assert embedder.calls == [["p53"]]
-    assert repo.search_calls == [("p53", [0.4, 0.6], 1)]
+    assert repo.search_calls == [("p53", expected_vector, 1)]
     assert repo.related_calls == []
     assert "cards" not in rows[0]
 
 
-def test_search_without_embedder_uses_deterministic_vector() -> None:
+def test_search_without_embedder_raises_clear_error() -> None:
     repo = FakeSearchRepo()
     service = SearchService(repo=repo)
 
-    first_rows = service.search("p53", top_k=1, include_cards=False)
-    second_rows = service.search("p53", top_k=1, include_cards=False)
+    with pytest.raises(RuntimeError, match="embedder"):
+        service.search("p53", top_k=1, include_cards=False)
 
-    assert len(repo.search_calls) == 2
-    first_query, first_vector, first_top_k = repo.search_calls[0]
-    second_query, second_vector, second_top_k = repo.search_calls[1]
-    assert first_query == "p53"
-    assert second_query == "p53"
-    assert first_top_k == 1
-    assert second_top_k == 1
-    assert len(first_vector) == 1536
-    assert first_vector == second_vector
-    assert first_rows[0]["paper_slug"] == "papers/a"
-    assert second_rows[0]["paper_slug"] == "papers/a"
+    assert repo.search_calls == []
+
+
+def test_search_raises_when_query_vector_length_is_not_1536() -> None:
+    repo = FakeSearchRepo()
+    service = SearchService(repo=repo, embedder=FakeEmbedder([0.1, 0.2]))
+
+    with pytest.raises(ValueError, match="1536"):
+        service.search("p53", top_k=1, include_cards=False)
+
+    assert repo.search_calls == []
+
+
+def test_search_raises_when_query_vector_contains_non_finite_values() -> None:
+    invalid_vector = [0.0] * 1535 + [float("nan")]
+    repo = FakeSearchRepo()
+    service = SearchService(repo=repo, embedder=FakeEmbedder(invalid_vector))
+
+    with pytest.raises(ValueError, match="finite"):
+        service.search("p53", top_k=1, include_cards=False)
+
+    assert repo.search_calls == []
 
 
 def test_postgres_browse_reads_persisted_cards() -> None:
@@ -161,7 +183,7 @@ def test_postgres_search_hybrid_returns_ranked_rows() -> None:
     rows = repo.search_hybrid("p53 mutation", query_vector=[0.1, 0.2], top_k=3)
 
     assert rows == [{"paper_slug": "papers/a", "keyword_rank": 0.8, "vector_rank": 0.2}]
-    assert "JOIN paper_embeddings e ON e.chunk_id = c.id" in connection.executed[0][0]
+    assert "LEFT JOIN paper_embeddings e ON e.chunk_id = c.id" in connection.executed[0][0]
     assert "<=>" in connection.executed[0][0]
     assert connection.executed[0][1] == ("p53 mutation", "[0.1, 0.2]", 3)
 

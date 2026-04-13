@@ -26,7 +26,7 @@ class SearchService:
     def search(self, query: str, top_k: int = 10, include_cards: bool = False) -> list[dict]:
         rows = self.repo.search_hybrid(query, top_k)
         paper_slugs = [row["paper_slug"] for row in rows]
-        related = self.repo.fetch_related_cards(paper_slugs) if include_cards else {}
+        related = self.repo.fetch_related_cards(paper_slugs) if include_cards and paper_slugs else {}
         output: list[dict] = []
         for row in rows:
             enriched = dict(row)
@@ -35,4 +35,3 @@ class SearchService:
                 enriched["cards"] = related.get(row["paper_slug"], [])
             output.append(enriched)
         return output
-

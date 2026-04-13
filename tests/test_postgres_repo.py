@@ -264,3 +264,82 @@ def test_replace_chunks_raises_on_length_mismatch_without_sql() -> None:
     assert connection.executed == []
     assert connection.transaction_entered == 0
     assert connection.transaction_exited == 0
+
+
+def test_upsert_person_cards_does_not_rebuild_links_when_relation_fields_absent() -> None:
+    connection = FakeConnection()
+    repo = PostgresRepo(connection)
+
+    repo.upsert_person_cards(
+        [
+            {
+                "slug": "people/alice-university-org",
+                "type": "person",
+                "focus_area": "Cancer genomics",
+            }
+        ]
+    )
+
+    executed_sql = "\n".join(sql for sql, _ in connection.executed)
+    assert "INSERT INTO person_cards" in executed_sql
+    assert "DELETE FROM paper_person_links" not in executed_sql
+    assert "INSERT INTO paper_person_links" not in executed_sql
+
+
+def test_upsert_person_cards_rebuilds_links_when_relation_fields_explicitly_present() -> None:
+    connection = FakeConnection()
+    repo = PostgresRepo(connection)
+
+    repo.upsert_person_cards(
+        [
+            {
+                "slug": "people/alice-university-org",
+                "type": "person",
+                "related_papers": [],
+            }
+        ]
+    )
+
+    executed_sql = "\n".join(sql for sql, _ in connection.executed)
+    assert "DELETE FROM paper_person_links" in executed_sql
+
+
+def test_upsert_topic_cards_does_not_rebuild_links_when_relation_fields_absent() -> None:
+    connection = FakeConnection()
+    repo = PostgresRepo(connection)
+
+    repo.upsert_topic_cards(
+        [
+            {
+                "slug": "topics/cancer-genetics",
+                "type": "topic",
+                "topic": "Cancer Genetics",
+            }
+        ]
+    )
+
+    executed_sql = "\n".join(sql for sql, _ in connection.executed)
+    assert "INSERT INTO topic_cards" in executed_sql
+    assert "DELETE FROM paper_topic_links" not in executed_sql
+    assert "DELETE FROM person_topic_links" not in executed_sql
+    assert "INSERT INTO paper_topic_links" not in executed_sql
+    assert "INSERT INTO person_topic_links" not in executed_sql
+
+
+def test_upsert_topic_cards_rebuilds_each_relation_type_only_when_explicitly_present() -> None:
+    connection = FakeConnection()
+    repo = PostgresRepo(connection)
+
+    repo.upsert_topic_cards(
+        [
+            {
+                "slug": "topics/cancer-genetics",
+                "type": "topic",
+                "related_papers": ["papers/a"],
+            }
+        ]
+    )
+    executed_sql = "\n".join(sql for sql, _ in connection.executed)
+    assert "DELETE FROM paper_topic_links" in executed_sql
+    assert "INSERT INTO paper_topic_links" in executed_sql
+    assert "DELETE FROM person_topic_links" not in executed_sql

@@ -1,4 +1,6 @@
 from pathlib import Path
+import os
+import stat
 
 import pytest
 
@@ -58,6 +60,42 @@ def test_load_rejects_non_string_openai_api_key(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Invalid openai_api_key in configuration file"):
         ConfigStore(config_path).load()
+
+
+def test_save_rejects_incompatible_embedding_model(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+
+    with pytest.raises(ValueError, match="text-embedding-3-small"):
+        ConfigStore(config_path).save(
+            database_url="postgresql://localhost:5432/paperbrain",
+            embedding_model="text-embedding-3-large",
+        )
+
+
+def test_load_rejects_incompatible_embedding_model(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+    config_path.write_text(
+        (
+            "[paperbrain]\n"
+            'database_url = "postgresql://localhost:5432/paperbrain"\n'
+            'embedding_model = "text-embedding-3-large"\n'
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="text-embedding-3-small"):
+        ConfigStore(config_path).load()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX-only permission mode semantics")
+def test_save_sets_restrictive_permissions(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+    store = ConfigStore(config_path)
+
+    store.save(database_url="postgresql://localhost:5432/paperbrain")
+
+    mode = stat.S_IMODE(config_path.stat().st_mode)
+    assert mode == 0o600
 
 
 @pytest.mark.parametrize(

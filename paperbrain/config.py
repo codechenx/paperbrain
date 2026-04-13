@@ -4,6 +4,7 @@ import tomllib
 
 DEFAULT_SUMMARY_MODEL = "gpt-4.1-mini"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+SUPPORTED_1536D_EMBEDDING_MODELS = {DEFAULT_EMBEDDING_MODEL}
 
 
 @dataclass(slots=True)
@@ -12,6 +13,16 @@ class AppConfig:
     openai_api_key: str
     summary_model: str
     embedding_model: str
+
+
+def validate_embedding_model_for_schema(embedding_model: str) -> None:
+    model = embedding_model.strip()
+    if model not in SUPPORTED_1536D_EMBEDDING_MODELS:
+        supported = ", ".join(sorted(SUPPORTED_1536D_EMBEDDING_MODELS))
+        raise ValueError(
+            f"Embedding model '{embedding_model}' is incompatible with vector(1536). "
+            f"Supported model(s): {supported}."
+        )
 
 
 class ConfigStore:
@@ -26,6 +37,7 @@ class ConfigStore:
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     ) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        validate_embedding_model_for_schema(embedding_model)
         body = (
             "[paperbrain]\n"
             'database_url = "{database_url}"\n'
@@ -39,6 +51,7 @@ class ConfigStore:
             embedding_model=embedding_model.replace("\\", "\\\\").replace('"', '\\"'),
         )
         self.path.write_text(body, encoding="utf-8")
+        self.path.chmod(0o600)
 
     def load(self) -> AppConfig:
         if not self.path.exists():
@@ -59,6 +72,7 @@ class ConfigStore:
         embedding_model = section.get("embedding_model", DEFAULT_EMBEDDING_MODEL)
         if not isinstance(embedding_model, str):
             raise ValueError("Invalid embedding_model in configuration file")
+        validate_embedding_model_for_schema(embedding_model)
         return AppConfig(
             database_url=database_url,
             openai_api_key=openai_api_key,

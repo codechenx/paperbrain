@@ -247,3 +247,53 @@ def test_postgres_persists_person_and_topic_links() -> None:
     assert "INSERT INTO person_topic_links" in executed_sql
     assert connection.transaction_entered == 2
     assert connection.transaction_exited == 2
+
+
+def test_summarize_does_not_delete_existing_links_when_derived_cards_omit_relations() -> None:
+    connection = FakeConnection(
+        rows_sequence=[
+            [
+                (
+                    "paper-1",
+                    "papers/chen-p53-nature-2024-abc123",
+                    "P53 Mutations and Cancer Progression",
+                    "Nature",
+                    2024,
+                    '["Stephen Chen"]',
+                    '["Alice Research <alice@university.org>"]',
+                    "P53 mutation study",
+                )
+            ]
+        ],
+        row_sequence=[("papers/chen-p53-nature-2024-abc123",)],
+    )
+    repo = PostgresRepo(connection)
+
+    class SparseLLM:
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            return {
+                "slug": metadata["slug"],
+                "type": "article",
+                "title": metadata["title"],
+                "summary": "x",
+                "corresponding_authors": metadata["corresponding_authors"],
+            }
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            _ = paper_cards
+            return [{"slug": "people/alice-university-org", "type": "person", "focus_area": "Cancer genomics"}]
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            _ = person_cards
+            return [{"slug": "topics/cancer-genomics", "type": "topic", "topic": "Cancer Genomics"}]
+
+    result = SummarizeService(repo=repo, llm=SparseLLM()).run(force_all=False)
+
+    executed_sql = "\n".join(sql for sql, _ in connection.executed)
+    assert "DELETE FROM paper_person_links" not in executed_sql
+    assert "DELETE FROM paper_topic_links" not in executed_sql
+    assert "DELETE FROM person_topic_links" not in executed_sql
+    assert result.paper_cards == 1
+    assert result.person_cards == 1
+    assert result.topic_cards == 1

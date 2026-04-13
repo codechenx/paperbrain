@@ -108,7 +108,40 @@ def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
         {
             "slug": "topics/research-synthesis",
             "type": "topic",
-            "topic": "Research Synthesis",
+            "topic": "Research synthesis",
+            "related_people": ["people/alice-example-org"],
+            "related_papers": [],
         }
     ]
     assert client.summary_calls == [{"text": f"Test Paper\n\n{paper_text[:8000]}", "model": "gpt-4.1-mini"}]
+
+
+def test_topic_derivation_is_deterministic_and_data_driven() -> None:
+    client = FakeOpenAIClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+
+    person_cards = [
+        {
+            "slug": "people/alice-example-org",
+            "type": "person",
+            "focus_area": "Cancer Genomics",
+            "related_papers": ["papers/a"],
+        },
+        {
+            "slug": "people/bob-example-org",
+            "type": "person",
+            "focus_area": "Immunotherapy",
+            "related_papers": ["papers/b"],
+        },
+    ]
+
+    topic_cards = adapter.derive_topic_cards(person_cards)
+
+    assert {card["slug"] for card in topic_cards} == {"topics/cancer-genomics", "topics/immunotherapy"}
+    assert all(card["slug"] != "topics/research-synthesis" for card in topic_cards)
+    cancer_card = next(card for card in topic_cards if card["slug"] == "topics/cancer-genomics")
+    immuno_card = next(card for card in topic_cards if card["slug"] == "topics/immunotherapy")
+    assert cancer_card["related_people"] == ["people/alice-example-org"]
+    assert cancer_card["related_papers"] == ["papers/a"]
+    assert immuno_card["related_people"] == ["people/bob-example-org"]
+    assert immuno_card["related_papers"] == ["papers/b"]

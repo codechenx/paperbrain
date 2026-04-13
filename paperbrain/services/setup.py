@@ -2,7 +2,7 @@ from pathlib import Path
 
 from paperbrain.adapters.openai_client import OpenAIClient
 from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_SUMMARY_MODEL
-from paperbrain.config import ConfigStore
+from paperbrain.config import ConfigStore, validate_embedding_model_for_schema
 from paperbrain.db import connect
 
 
@@ -38,6 +38,7 @@ def run_setup(
         raise ValueError("Summary model must be non-empty")
     if not embedding_model.strip():
         raise ValueError("Embedding model must be non-empty")
+    validate_embedding_model_for_schema(embedding_model)
     if test_connections:
         try:
             _validate_database_connection(database_url)

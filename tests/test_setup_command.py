@@ -221,6 +221,17 @@ def test_run_setup_openai_validation_failure_has_context(monkeypatch: Any, tmp_p
         )
 
 
+def test_run_setup_rejects_embedding_models_incompatible_with_schema(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="text-embedding-3-small"):
+        run_setup(
+            database_url="postgresql://localhost:5432/paperbrain",
+            openai_api_key="sk-test",
+            embedding_model="text-embedding-3-large",
+            config_path=tmp_path / "paperbrain.conf",
+            test_connections=False,
+        )
+
+
 def test_run_init_applies_schema_to_database(monkeypatch: Any) -> None:
     statements = ["SELECT 1;", "SELECT 2;"]
     executed: list[str] = []

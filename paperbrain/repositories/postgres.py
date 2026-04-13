@@ -77,6 +77,10 @@ def _extract_slug_values(card: dict[str, Any], *keys: str) -> list[str]:
     return values
 
 
+def _has_any_explicit_fields(card: dict[str, Any], *keys: str) -> bool:
+    return any(key in card for key in keys)
+
+
 class PostgresRepo:
     def __init__(self, connection: Connection) -> None:
         self.connection = connection
@@ -304,6 +308,7 @@ class PostgresRepo:
         if not cards:
             return
 
+        relation_keys = ("related_papers", "paper_slugs", "papers")
         with self.transaction():
             for card in cards:
                 slug = str(card.get("slug", "")).strip()
@@ -319,21 +324,24 @@ class PostgresRepo:
                     """.strip(),
                     (slug, body),
                 )
-                self.execute("DELETE FROM paper_person_links WHERE person_slug = %s;", (slug,))
-                for paper_slug in _extract_slug_values(card, "related_papers", "paper_slugs", "papers"):
-                    self.execute(
-                        """
-                        INSERT INTO paper_person_links (paper_slug, person_slug)
-                        VALUES (%s, %s)
-                        ON CONFLICT DO NOTHING;
-                        """.strip(),
-                        (paper_slug, slug),
-                    )
+                if _has_any_explicit_fields(card, *relation_keys):
+                    self.execute("DELETE FROM paper_person_links WHERE person_slug = %s;", (slug,))
+                    for paper_slug in _extract_slug_values(card, *relation_keys):
+                        self.execute(
+                            """
+                            INSERT INTO paper_person_links (paper_slug, person_slug)
+                            VALUES (%s, %s)
+                            ON CONFLICT DO NOTHING;
+                            """.strip(),
+                            (paper_slug, slug),
+                        )
 
     def upsert_topic_cards(self, cards: list[dict]) -> None:
         if not cards:
             return
 
+        paper_relation_keys = ("related_papers", "paper_slugs", "papers")
+        person_relation_keys = ("related_people", "person_slugs", "people")
         with self.transaction():
             for card in cards:
                 slug = str(card.get("slug", "")).strip()
@@ -349,26 +357,28 @@ class PostgresRepo:
                     """.strip(),
                     (slug, body),
                 )
-                self.execute("DELETE FROM paper_topic_links WHERE topic_slug = %s;", (slug,))
-                self.execute("DELETE FROM person_topic_links WHERE topic_slug = %s;", (slug,))
-                for paper_slug in _extract_slug_values(card, "related_papers", "paper_slugs", "papers"):
-                    self.execute(
-                        """
-                        INSERT INTO paper_topic_links (paper_slug, topic_slug)
-                        VALUES (%s, %s)
-                        ON CONFLICT DO NOTHING;
-                        """.strip(),
-                        (paper_slug, slug),
-                    )
-                for person_slug in _extract_slug_values(card, "related_people", "person_slugs", "people"):
-                    self.execute(
-                        """
-                        INSERT INTO person_topic_links (person_slug, topic_slug)
-                        VALUES (%s, %s)
-                        ON CONFLICT DO NOTHING;
-                        """.strip(),
-                        (person_slug, slug),
-                    )
+                if _has_any_explicit_fields(card, *paper_relation_keys):
+                    self.execute("DELETE FROM paper_topic_links WHERE topic_slug = %s;", (slug,))
+                    for paper_slug in _extract_slug_values(card, *paper_relation_keys):
+                        self.execute(
+                            """
+                            INSERT INTO paper_topic_links (paper_slug, topic_slug)
+                            VALUES (%s, %s)
+                            ON CONFLICT DO NOTHING;
+                            """.strip(),
+                            (paper_slug, slug),
+                        )
+                if _has_any_explicit_fields(card, *person_relation_keys):
+                    self.execute("DELETE FROM person_topic_links WHERE topic_slug = %s;", (slug,))
+                    for person_slug in _extract_slug_values(card, *person_relation_keys):
+                        self.execute(
+                            """
+                            INSERT INTO person_topic_links (person_slug, topic_slug)
+                            VALUES (%s, %s)
+                            ON CONFLICT DO NOTHING;
+                            """.strip(),
+                            (person_slug, slug),
+                        )
 
     def upsert_paper(self, paper: ParsedPaper, force: bool) -> str:
         paper_hash = hashlib.sha1(paper.source_path.encode("utf-8")).hexdigest()[:12]

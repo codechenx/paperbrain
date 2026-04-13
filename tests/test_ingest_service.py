@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
+import sys
+import types
 
 import pytest
 
@@ -92,3 +94,70 @@ def test_docling_parser_raises_for_missing_file(tmp_path: Path) -> None:
 
     with pytest.raises(FileNotFoundError):
         parser.parse_pdf(missing_pdf)
+
+
+def test_docling_parser_extracts_structured_metadata_when_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+
+    class FakeDocument:
+        title = "Structured title"
+        metadata = {
+            "authors": ["Alice Example", "Bob Example"],
+            "year": "2024",
+            "journal": "Nature",
+        }
+
+        def export_to_markdown(self) -> str:
+            return "# heading\n\nbody"
+
+    class FakeConverter:
+        def convert(self, path: str):  # noqa: ANN201
+            _ = path
+            return types.SimpleNamespace(document=FakeDocument())
+
+    module = types.ModuleType("docling.document_converter")
+    module.DocumentConverter = FakeConverter
+    monkeypatch.setitem(sys.modules, "docling", types.ModuleType("docling"))
+    monkeypatch.setitem(sys.modules, "docling.document_converter", module)
+
+    parsed = DoclingParser().parse_pdf(pdf_path)
+
+    assert parsed.title == "Structured title"
+    assert parsed.authors == ["Alice Example", "Bob Example"]
+    assert parsed.year == 2024
+    assert parsed.journal == "Nature"
+    assert parsed.full_text == "# heading\n\nbody"
+    assert parsed.source_path == str(pdf_path)
+
+
+def test_docling_parser_falls_back_to_defaults_when_metadata_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf_path = tmp_path / "untitled.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+
+    class FakeDocument:
+        metadata = {}
+
+        def export_to_markdown(self) -> str:
+            return "body"
+
+    class FakeConverter:
+        def convert(self, path: str):  # noqa: ANN201
+            _ = path
+            return types.SimpleNamespace(document=FakeDocument())
+
+    module = types.ModuleType("docling.document_converter")
+    module.DocumentConverter = FakeConverter
+    monkeypatch.setitem(sys.modules, "docling", types.ModuleType("docling"))
+    monkeypatch.setitem(sys.modules, "docling.document_converter", module)
+
+    parsed = DoclingParser().parse_pdf(pdf_path)
+
+    assert parsed.title == "untitled"
+    assert parsed.authors == []
+    assert parsed.year == 1970
+    assert parsed.journal == "Unknown Journal"

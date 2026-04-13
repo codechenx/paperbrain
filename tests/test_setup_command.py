@@ -145,6 +145,34 @@ def test_cli_setup_prompts_securely_when_openai_key_missing(monkeypatch: Any) ->
     assert calls["openai_api_key"] == "sk-prompted"
 
 
+def test_cli_setup_does_not_prompt_when_connection_tests_disabled(monkeypatch: Any) -> None:
+    calls: dict[str, Any] = {}
+    prompt_calls: list[tuple[str, bool]] = []
+
+    def fake_run_setup(**kwargs: Any) -> str:
+        calls.update(kwargs)
+        return "ok"
+
+    def fake_prompt(text: str, *, hide_input: bool = False) -> str:
+        prompt_calls.append((text, hide_input))
+        return "sk-prompted"
+
+    monkeypatch.setattr("paperbrain.cli.run_setup", fake_run_setup)
+    monkeypatch.setattr("paperbrain.cli.typer.prompt", fake_prompt)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["setup", "--url", "postgresql://localhost:5432/paperbrain", "--no-test-connections"],
+        env={},
+    )
+
+    assert result.exit_code == 0
+    assert prompt_calls == []
+    assert calls["openai_api_key"] == ""
+    assert calls["test_connections"] is False
+
+
 def test_run_setup_database_validation_failure_has_context(monkeypatch: Any, tmp_path: Path) -> None:
     def failing_connect(database_url: str, *, autocommit: bool = False) -> Iterator[object]:
         _ = database_url, autocommit

@@ -23,8 +23,11 @@ def setup(
         help="Validate database and OpenAI connectivity before writing config",
     ),
 ) -> None:
-    resolved_openai_api_key = (openai_api_key or "").strip() or os.getenv("OPENAI_API_KEY", "").strip()
-    if not resolved_openai_api_key:
+    if openai_api_key is not None:
+        resolved_openai_api_key = openai_api_key.strip()
+    else:
+        resolved_openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not resolved_openai_api_key and test_connections:
         resolved_openai_api_key = typer.prompt("OpenAI API key", hide_input=True).strip()
     message = run_setup(
         database_url=url,

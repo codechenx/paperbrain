@@ -2,7 +2,8 @@ from pathlib import Path
 
 import typer
 
-from paperbrain.services.init import build_init_sql
+from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_SUMMARY_MODEL
+from paperbrain.services.init import run_init
 from paperbrain.services.setup import run_setup
 
 app = typer.Typer(no_args_is_help=True, help="PaperBrain CLI")
@@ -11,9 +12,24 @@ app = typer.Typer(no_args_is_help=True, help="PaperBrain CLI")
 @app.command()
 def setup(
     url: str = typer.Option(..., "--url", help="Postgres connection URL"),
-    config_path: Path = typer.Option(Path("~/.config/paperbrain.conf").expanduser(), "--config-path"),
+    openai_api_key: str = typer.Option("", "--openai-api-key", help="OpenAI API key"),
+    summary_model: str = typer.Option(DEFAULT_SUMMARY_MODEL, "--summary-model"),
+    embedding_model: str = typer.Option(DEFAULT_EMBEDDING_MODEL, "--embedding-model"),
+    config_path: Path = typer.Option(Path("./config/paperbrain.conf"), "--config-path"),
+    test_connections: bool = typer.Option(
+        True,
+        "--test-connections/--no-test-connections",
+        help="Validate database and OpenAI connectivity before writing config",
+    ),
 ) -> None:
-    message = run_setup(database_url=url, config_path=config_path)
+    message = run_setup(
+        database_url=url,
+        openai_api_key=openai_api_key,
+        summary_model=summary_model,
+        embedding_model=embedding_model,
+        config_path=config_path,
+        test_connections=test_connections,
+    )
     typer.echo(message)
 
 
@@ -22,9 +38,8 @@ def init(
     url: str = typer.Option(..., "--url", help="Postgres connection URL"),
     force: bool = typer.Option(False, "--force", help="Drop and recreate all tables"),
 ) -> None:
-    _ = url
-    statements = build_init_sql(force=force)
-    typer.echo(f"Prepared {len(statements)} schema statements.")
+    applied = run_init(database_url=url, force=force)
+    typer.echo(f"Applied {applied} schema statements.")
 
 
 @app.command()
@@ -71,4 +86,3 @@ def stats() -> None:
 @app.command()
 def export(output_dir: Path = typer.Option(Path("./paperbrain-export"), "--output-dir")) -> None:
     typer.echo(f"Export scaffold ready output_dir={output_dir}")
-

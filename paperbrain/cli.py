@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import typer
@@ -12,7 +13,7 @@ app = typer.Typer(no_args_is_help=True, help="PaperBrain CLI")
 @app.command()
 def setup(
     url: str = typer.Option(..., "--url", help="Postgres connection URL"),
-    openai_api_key: str = typer.Option("", "--openai-api-key", help="OpenAI API key"),
+    openai_api_key: str | None = typer.Option(None, "--openai-api-key", help="OpenAI API key"),
     summary_model: str = typer.Option(DEFAULT_SUMMARY_MODEL, "--summary-model"),
     embedding_model: str = typer.Option(DEFAULT_EMBEDDING_MODEL, "--embedding-model"),
     config_path: Path = typer.Option(Path("./config/paperbrain.conf"), "--config-path"),
@@ -22,9 +23,12 @@ def setup(
         help="Validate database and OpenAI connectivity before writing config",
     ),
 ) -> None:
+    resolved_openai_api_key = (openai_api_key or "").strip() or os.getenv("OPENAI_API_KEY", "").strip()
+    if not resolved_openai_api_key:
+        resolved_openai_api_key = typer.prompt("OpenAI API key", hide_input=True).strip()
     message = run_setup(
         database_url=url,
-        openai_api_key=openai_api_key,
+        openai_api_key=resolved_openai_api_key,
         summary_model=summary_model,
         embedding_model=embedding_model,
         config_path=config_path,

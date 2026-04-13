@@ -39,12 +39,18 @@ def run_setup(
     if not embedding_model.strip():
         raise ValueError("Embedding model must be non-empty")
     if test_connections:
-        _validate_database_connection(database_url)
-        _validate_openai_connection(
-            openai_api_key=openai_api_key,
-            summary_model=summary_model,
-            embedding_model=embedding_model,
-        )
+        try:
+            _validate_database_connection(database_url)
+        except Exception as exc:
+            raise RuntimeError(f"Setup failed during database validation: {exc}") from exc
+        try:
+            _validate_openai_connection(
+                openai_api_key=openai_api_key,
+                summary_model=summary_model,
+                embedding_model=embedding_model,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Setup failed during OpenAI validation: {exc}") from exc
     store = ConfigStore(config_path)
     store.save(
         database_url=database_url,

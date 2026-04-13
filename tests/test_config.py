@@ -45,6 +45,21 @@ def test_load_legacy_config_uses_model_defaults(tmp_path: Path) -> None:
     assert loaded.embedding_model == "text-embedding-3-small"
 
 
+def test_load_rejects_non_string_openai_api_key(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+    config_path.write_text(
+        (
+            "[paperbrain]\n"
+            'database_url = "postgresql://localhost:5432/paperbrain"\n'
+            "openai_api_key = 123\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Invalid openai_api_key in configuration file"):
+        ConfigStore(config_path).load()
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [

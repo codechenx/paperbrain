@@ -1,10 +1,21 @@
 import hashlib
 from typing import Protocol
 
+from paperbrain.adapters.openai_client import OpenAIClient
+
 
 class EmbeddingAdapter(Protocol):
     def embed(self, chunks: list[str]) -> list[list[float]]:
         ...
+
+
+class OpenAIEmbeddingAdapter:
+    def __init__(self, *, client: OpenAIClient, model: str) -> None:
+        self.client = client
+        self.model = model
+
+    def embed(self, chunks: list[str]) -> list[list[float]]:
+        return self.client.embed(chunks, model=self.model)
 
 
 class DeterministicEmbeddingAdapter:
@@ -18,4 +29,3 @@ class DeterministicEmbeddingAdapter:
                 vector.append((value % 10_000) / 10_000.0)
             vectors.append(vector)
         return vectors
-

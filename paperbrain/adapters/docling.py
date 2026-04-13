@@ -9,12 +9,27 @@ class DoclingAdapter(Protocol):
         ...
 
 
-class DefaultDoclingAdapter:
+class DoclingParser:
     def parse_pdf(self, path: Path) -> ParsedPaper:
         if not path.exists():
             raise FileNotFoundError(f"PDF file not found: {path}")
-        title = path.stem.replace("_", " ").strip() or "Untitled Paper"
-        content = path.read_bytes().decode("latin-1", errors="ignore")
+        try:
+            from docling.document_converter import DocumentConverter
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "docling is required for PDF parsing. Install it with `pip install docling`."
+            ) from exc
+
+        converter = DocumentConverter()
+        result = converter.convert(str(path))
+        document = getattr(result, "document", None)
+        if document is not None and hasattr(document, "export_to_markdown"):
+            content = document.export_to_markdown()
+        elif hasattr(result, "markdown"):
+            content = str(result.markdown)
+        else:
+            content = str(result)
+        title = getattr(document, "title", None) or path.stem.replace("_", " ").strip() or "Untitled Paper"
         return ParsedPaper(
             title=title,
             journal="Unknown Journal",
@@ -25,3 +40,5 @@ class DefaultDoclingAdapter:
             source_path=str(path),
         )
 
+
+DefaultDoclingAdapter = DoclingParser

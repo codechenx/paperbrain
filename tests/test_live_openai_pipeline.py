@@ -47,6 +47,9 @@ def _ensure_local_pdf_fixture(pdf_dir: Path) -> Path:
 
 
 def test_live_openai_postgres_pipeline(tmp_path: Path) -> None:
+    if os.getenv("PAPERBRAIN_ALLOW_DB_RESET", "").strip() != "1":
+        pytest.skip("PAPERBRAIN_ALLOW_DB_RESET=1 is required before running destructive init --force.")
+
     openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not openai_api_key:
         pytest.skip("OPENAI_API_KEY is required for live integration test.")
@@ -56,7 +59,7 @@ def test_live_openai_postgres_pipeline(tmp_path: Path) -> None:
         pytest.skip("PAPERBRAIN_TEST_DATABASE_URL is required for live integration test.")
 
     pdf_dir = Path(__file__).parent / "pdf"
-    _ensure_local_pdf_fixture(pdf_dir)
+    pdf_fixture = _ensure_local_pdf_fixture(pdf_dir)
 
     config_path = tmp_path / "config" / "paperbrain.conf"
     runner = CliRunner()
@@ -91,7 +94,7 @@ def test_live_openai_postgres_pipeline(tmp_path: Path) -> None:
 
     ingest_result = runner.invoke(
         app,
-        ["ingest", str(pdf_dir), "--recursive", "--config-path", str(config_path)],
+        ["ingest", str(pdf_fixture), "--config-path", str(config_path)],
         catch_exceptions=False,
     )
     assert ingest_result.exit_code == 0, ingest_result.output
@@ -104,3 +107,14 @@ def test_live_openai_postgres_pipeline(tmp_path: Path) -> None:
     )
     assert summarize_result.exit_code == 0, summarize_result.output
     assert "Summarized cards: papers=" in summarize_result.output
+
+    search_result = runner.invoke(
+        app,
+        ["search", pdf_fixture.stem, "--config-path", str(config_path)],
+        env=env,
+        catch_exceptions=False,
+    )
+    assert search_result.exit_code == 0, search_result.output
+    assert '"keyword_rank":' in search_result.output
+    assert '"vector_rank":' in search_result.output
+    assert '"score":' in search_result.output

@@ -3,9 +3,13 @@ from pathlib import Path
 
 import typer
 
+from paperbrain.config import ConfigStore
 from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_SUMMARY_MODEL
+from paperbrain.services.export import run_export
 from paperbrain.services.init import run_init
+from paperbrain.services.lint import run_lint
 from paperbrain.services.setup import run_setup
+from paperbrain.services.stats import run_stats
 
 app = typer.Typer(no_args_is_help=True, help="PaperBrain CLI")
 
@@ -81,15 +85,27 @@ def summarize(force_all: bool = typer.Option(False, "--force-all")) -> None:
 
 
 @app.command()
-def lint() -> None:
-    typer.echo("Lint scaffold ready")
+def lint(config_path: Path = typer.Option(Path("./config/paperbrain.conf"), "--config-path")) -> None:
+    config = ConfigStore(config_path).load()
+    stats = run_lint(config.database_url)
+    typer.echo(f"Linted {stats.checked} cards, fixed {stats.fixed}.")
 
 
 @app.command()
-def stats() -> None:
-    typer.echo("Stats scaffold ready")
+def stats(config_path: Path = typer.Option(Path("./config/paperbrain.conf"), "--config-path")) -> None:
+    config = ConfigStore(config_path).load()
+    corpus = run_stats(config.database_url)
+    typer.echo(f"Corpus stats: papers={corpus.papers} authors={corpus.authors} topics={corpus.topics}")
 
 
 @app.command()
-def export(output_dir: Path = typer.Option(Path("./paperbrain-export"), "--output-dir")) -> None:
-    typer.echo(f"Export scaffold ready output_dir={output_dir}")
+def export(
+    output_dir: Path = typer.Option(Path("./paperbrain-export"), "--output-dir"),
+    config_path: Path = typer.Option(Path("./config/paperbrain.conf"), "--config-path"),
+) -> None:
+    config = ConfigStore(config_path).load()
+    stats = run_export(config.database_url, output_dir)
+    typer.echo(
+        f"Exported {stats.files_written} files (papers={stats.papers} people={stats.people} topics={stats.topics}) "
+        f"to {output_dir}"
+    )

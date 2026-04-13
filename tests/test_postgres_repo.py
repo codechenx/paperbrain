@@ -228,6 +228,30 @@ def test_upsert_paper_force_true_uses_update_on_conflict() -> None:
     assert params[8] == "Full paper text."
 
 
+def test_upsert_paper_strips_nul_bytes_from_text_fields() -> None:
+    connection = FakeConnection(row=("paper-updated",))
+    repo = PostgresRepo(connection)
+    paper = ParsedPaper(
+        title="Bad\x00Title",
+        journal="Bad\x00Journal",
+        year=2024,
+        authors=["Alice\x00Name"],
+        corresponding_authors=["Bob\x00Author"],
+        full_text="Hello\x00World",
+        source_path="/papers/testing.pdf",
+    )
+
+    _ = repo.upsert_paper(paper, force=True)
+
+    _, params = connection.executed[0]
+    assert params is not None
+    assert params[2] == "BadTitle"
+    assert params[3] == "BadJournal"
+    assert params[5] == json.dumps(["AliceName"])
+    assert params[6] == json.dumps(["BobAuthor"])
+    assert params[8] == "HelloWorld"
+
+
 def test_replace_chunks_deletes_then_reinserts_in_order() -> None:
     connection = FakeConnection()
     repo = PostgresRepo(connection)
@@ -343,3 +367,45 @@ def test_upsert_topic_cards_rebuilds_each_relation_type_only_when_explicitly_pre
     assert "DELETE FROM paper_topic_links" in executed_sql
     assert "INSERT INTO paper_topic_links" in executed_sql
     assert "DELETE FROM person_topic_links" not in executed_sql
+
+
+def test_upsert_person_cards_replace_existing_prunes_missing_cards() -> None:
+    connection = FakeConnection()
+    repo = PostgresRepo(connection)
+
+    repo.upsert_person_cards(
+        [
+            {
+                "slug": "people/alice-university-org",
+                "type": "person",
+                "related_papers": ["papers/a"],
+            }
+        ],
+        replace_existing=True,
+    )
+
+    executed_sql = "\n".join(sql for sql, _ in connection.executed)
+    assert "DELETE FROM person_cards WHERE slug <> ALL(%s);" in executed_sql
+    assert "DELETE FROM paper_person_links WHERE person_slug <> ALL(%s);" in executed_sql
+    assert "DELETE FROM person_topic_links WHERE person_slug <> ALL(%s);" in executed_sql
+
+
+def test_upsert_topic_cards_replace_existing_prunes_missing_cards() -> None:
+    connection = FakeConnection()
+    repo = PostgresRepo(connection)
+
+    repo.upsert_topic_cards(
+        [
+            {
+                "slug": "topics/cancer-genetics",
+                "type": "topic",
+                "related_papers": ["papers/a"],
+            }
+        ],
+        replace_existing=True,
+    )
+
+    executed_sql = "\n".join(sql for sql, _ in connection.executed)
+    assert "DELETE FROM topic_cards WHERE slug <> ALL(%s);" in executed_sql
+    assert "DELETE FROM paper_topic_links WHERE topic_slug <> ALL(%s);" in executed_sql
+    assert "DELETE FROM person_topic_links WHERE topic_slug <> ALL(%s);" in executed_sql

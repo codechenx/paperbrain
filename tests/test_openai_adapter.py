@@ -89,31 +89,216 @@ def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
     person_cards = adapter.derive_person_cards([paper_card])
     topic_cards = adapter.derive_topic_cards(person_cards)
 
-    assert paper_card == {
-        "slug": "papers/test-paper",
-        "type": "article",
-        "title": "Test Paper",
-        "summary": "generated summary",
-        "corresponding_authors": ["Alice Example <alice@example.org>"],
-    }
+    assert paper_card["slug"] == "papers/test-paper"
+    assert paper_card["type"] == "article"
+    assert paper_card["paper_type"] == "article"
+    assert paper_card["title"] == "Test Paper"
+    assert paper_card["authors"] == []
+    assert paper_card["journal"] == "Unknown"
+    assert paper_card["year"] == 0
+    assert paper_card["summary"].startswith("Key question solved:")
+    assert paper_card["corresponding_authors"] == ["alice@example.org"]
     assert person_cards == [
         {
             "slug": "people/alice-example-org",
             "type": "person",
-            "email": "alice@example.org",
-            "focus_area": "Research synthesis",
+            "name": "alice",
+                "email": "alice@example.org",
+                "affiliation": "example.org",
+                "focus_area": ["test paper"],
+            "big_questions": [
+                {
+                    "question": "Test Paper",
+                    "why_important": "(missing)",
+                    "related_papers": ["papers/test-paper"],
+                }
+            ],
+            "related_papers": ["papers/test-paper"],
         }
     ]
     assert topic_cards == [
         {
-            "slug": "topics/research-synthesis",
+            "slug": "topics/test-paper",
             "type": "topic",
-            "topic": "Research synthesis",
+            "topic": "test paper",
+            "related_big_questions": [
+                {
+                    "question": "Test Paper",
+                    "why_important": "(missing)",
+                    "related_papers": ["papers/test-paper"],
+                    "related_people": ["people/alice-example-org"],
+                }
+            ],
             "related_people": ["people/alice-example-org"],
-            "related_papers": [],
+            "related_papers": ["papers/test-paper"],
         }
     ]
-    assert client.summary_calls == [{"text": f"Test Paper\n\n{paper_text[:8000]}", "model": "gpt-4.1-mini"}]
+    assert len(client.summary_calls) == 2
+    assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-page OCR/text")
+    assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
+    assert "logical flow of sections and experiments" in client.summary_calls[1]["text"]
+    assert "bullet points for key results with figure references" in client.summary_calls[1]["text"]
+
+
+def test_openai_summary_adapter_infers_corresponding_authors_from_first_page_text() -> None:
+    client = FakeOpenAIClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    first_page = "Corresponding author: Alice Research alice@university.org"
+    paper_text = first_page + "\n" + ("x" * 9000)
+
+    paper_card = adapter.summarize_paper(
+        paper_text,
+        {
+            "slug": "papers/test-paper",
+            "title": "Test Paper",
+            "corresponding_authors": [],
+        },
+    )
+
+    assert paper_card["corresponding_authors"] == ["alice@university.org"]
+    assert len(client.summary_calls) == 2
+    assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-page OCR/text")
+    assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
+
+
+def test_openai_summary_adapter_uses_openai_fallback_for_missing_corresponding_authors() -> None:
+    class FallbackClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Extract corresponding author email addresses"):
+                return '["bob@lab.org"]'
+            return "generated summary"
+
+    client = FallbackClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    paper_text = "No email on first page\n" + ("x" * 9000)
+
+    paper_card = adapter.summarize_paper(
+        paper_text,
+        {
+            "slug": "papers/test-paper",
+            "title": "Test Paper",
+            "corresponding_authors": [],
+        },
+    )
+
+    assert paper_card["corresponding_authors"] == ["bob@lab.org"]
+    assert len(client.summary_calls) == 3
+    assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-page OCR/text")
+    assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
+    assert client.summary_calls[2]["text"].startswith("Extract corresponding author email addresses")
+
+
+def test_openai_summary_adapter_formats_logical_flow_list_as_numbered_markdown() -> None:
+    class StructuredSummaryClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Extract bibliographic metadata"):
+                return '{"authors": ["A"], "journal": "Nature", "year": 2025}'
+            if text.startswith("Create a concise structured summary of the paper"):
+                return """
+{
+  "paper_type": "article",
+  "key_question_solved": "Q",
+  "why_important": "W",
+  "method": "M",
+  "findings_logical_flow": [
+    "Introduction sets up motivation.",
+    "Figure 1 establishes baseline.",
+    "Figure 2 validates mechanism."
+  ],
+  "key_results_with_figures": [
+    {"figure": "Figure 1", "result": "Baseline trend is confirmed."},
+    {"figure": "Figure 2", "result": "Mechanistic effect is significant."}
+  ],
+  "limitations": "L"
+}
+""".strip()
+            return "generated summary"
+
+    client = StructuredSummaryClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    paper = adapter.summarize_paper(
+        "paper text",
+        {"slug": "papers/test-paper", "title": "Test Paper", "corresponding_authors": ["alice@example.org"]},
+    )
+
+    assert "Logical flow of sections and experiments:" in paper["summary"]
+    assert "1. Introduction sets up motivation." in paper["summary"]
+    assert "2. Figure 1 establishes baseline." in paper["summary"]
+    assert "3. Figure 2 validates mechanism." in paper["summary"]
+    assert "['Introduction sets up motivation.'" not in paper["summary"]
+
+
+def test_openai_summary_adapter_supplements_key_results_from_figure_mentions() -> None:
+    class SparseResultClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Extract bibliographic metadata"):
+                return '{"authors": ["A"], "journal": "Nature", "year": 2025}'
+            if text.startswith("Create a concise structured summary of the paper"):
+                return """
+{
+  "paper_type": "article",
+  "key_question_solved": "Q",
+  "why_important": "W",
+  "method": "M",
+  "findings_logical_flow": "Flow",
+  "key_results_with_figures": [],
+  "limitations": "L"
+}
+""".strip()
+            return "generated summary"
+
+    client = SparseResultClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    paper_text = (
+        "Figure 1 shows baseline survival trends across cohorts. "
+        "Figure 2 demonstrates treatment effect with reduced hazard ratio. "
+        "Figure 3 validates robustness in an independent dataset."
+    )
+    paper = adapter.summarize_paper(
+        paper_text,
+        {"slug": "papers/test-paper", "title": "Test Paper", "corresponding_authors": ["alice@example.org"]},
+    )
+
+    assert "- Figure 1: shows baseline survival trends across cohorts" in paper["summary"]
+    assert "- Figure 2: demonstrates treatment effect with reduced hazard ratio" in paper["summary"]
+    assert "- Figure 3: validates robustness in an independent dataset" in paper["summary"]
+    assert "- Figure ?: (missing)" not in paper["summary"]
+
+
+def test_openai_summary_adapter_normalizes_supplementary_figure_labels() -> None:
+    class SupplementaryClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Extract bibliographic metadata"):
+                return '{"authors": ["A"], "journal": "Nature", "year": 2025}'
+            if text.startswith("Create a concise structured summary of the paper"):
+                return """
+{
+  "paper_type": "article",
+  "key_question_solved": "Q",
+  "why_important": "W",
+  "method": "M",
+  "findings_logical_flow": "Flow",
+  "key_results_with_figures": [
+    {"figure": "Figure S1", "result": "Supplementary benchmark result."}
+  ],
+  "limitations": "L"
+}
+""".strip()
+            return "generated summary"
+
+    client = SupplementaryClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    paper = adapter.summarize_paper(
+        "Figure S1 reports supplementary benchmark result.",
+        {"slug": "papers/test-paper", "title": "Test Paper", "corresponding_authors": ["alice@example.org"]},
+    )
+
+    assert "- Figure S1: Supplementary benchmark result." in paper["summary"]
+    assert "Figure Figure S1" not in paper["summary"]
 
 
 def test_topic_derivation_is_deterministic_and_data_driven() -> None:
@@ -124,24 +309,110 @@ def test_topic_derivation_is_deterministic_and_data_driven() -> None:
         {
             "slug": "people/alice-example-org",
             "type": "person",
-            "focus_area": "Cancer Genomics",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/a"],
+                }
+            ],
             "related_papers": ["papers/a"],
         },
         {
             "slug": "people/bob-example-org",
             "type": "person",
-            "focus_area": "Immunotherapy",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": "How does lung microbiome composition affect lung infection severity?",
+                    "why_important": "May enable earlier intervention for respiratory disease.",
+                    "related_papers": ["papers/b"],
+                }
+            ],
             "related_papers": ["papers/b"],
         },
     ]
 
     topic_cards = adapter.derive_topic_cards(person_cards)
 
-    assert {card["slug"] for card in topic_cards} == {"topics/cancer-genomics", "topics/immunotherapy"}
+    assert {card["slug"] for card in topic_cards} == {
+        "topics/gut-microbiome-and-lung-cancer-treatment",
+        "topics/lung-microbiome-and-lung-infection",
+    }
     assert all(card["slug"] != "topics/research-synthesis" for card in topic_cards)
-    cancer_card = next(card for card in topic_cards if card["slug"] == "topics/cancer-genomics")
-    immuno_card = next(card for card in topic_cards if card["slug"] == "topics/immunotherapy")
-    assert cancer_card["related_people"] == ["people/alice-example-org"]
-    assert cancer_card["related_papers"] == ["papers/a"]
-    assert immuno_card["related_people"] == ["people/bob-example-org"]
-    assert immuno_card["related_papers"] == ["papers/b"]
+    cancer_microbiome_card = next(
+        card for card in topic_cards if card["slug"] == "topics/gut-microbiome-and-lung-cancer-treatment"
+    )
+    lung_infection_card = next(card for card in topic_cards if card["slug"] == "topics/lung-microbiome-and-lung-infection")
+    assert cancer_microbiome_card["topic"] == "gut microbiome and lung cancer treatment"
+    assert cancer_microbiome_card["related_people"] == ["people/alice-example-org"]
+    assert cancer_microbiome_card["related_papers"] == ["papers/a"]
+    assert cancer_microbiome_card["related_big_questions"] == [
+        {
+            "question": "How can gut microbiome signals improve lung cancer treatment response?",
+            "why_important": "Could personalize treatment and improve outcomes.",
+            "related_papers": ["papers/a"],
+            "related_people": ["people/alice-example-org"],
+        }
+    ]
+    assert lung_infection_card["topic"] == "lung microbiome and lung infection"
+    assert lung_infection_card["related_people"] == ["people/bob-example-org"]
+    assert lung_infection_card["related_papers"] == ["papers/b"]
+    assert lung_infection_card["related_big_questions"] == [
+        {
+            "question": "How does lung microbiome composition affect lung infection severity?",
+            "why_important": "May enable earlier intervention for respiratory disease.",
+            "related_papers": ["papers/b"],
+            "related_people": ["people/bob-example-org"],
+        }
+    ]
+
+
+def test_topic_derivation_merges_duplicate_big_questions_across_people() -> None:
+    client = FakeOpenAIClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+
+    shared_question = "How can gut microbiome signals improve lung cancer treatment response?"
+    person_cards = [
+        {
+            "slug": "people/alice-example-org",
+            "type": "person",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": shared_question,
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/a"],
+                }
+            ],
+            "related_papers": ["papers/a"],
+        },
+        {
+            "slug": "people/bob-example-org",
+            "type": "person",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": shared_question,
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/b"],
+                }
+            ],
+            "related_papers": ["papers/b"],
+        },
+    ]
+
+    topic_cards = adapter.derive_topic_cards(person_cards)
+    assert len(topic_cards) == 1
+    assert topic_cards[0]["slug"] == "topics/gut-microbiome-and-lung-cancer-treatment"
+    assert topic_cards[0]["related_people"] == ["people/alice-example-org", "people/bob-example-org"]
+    assert topic_cards[0]["related_papers"] == ["papers/a", "papers/b"]
+    assert topic_cards[0]["related_big_questions"] == [
+        {
+            "question": shared_question,
+            "why_important": "Could personalize treatment and improve outcomes.",
+            "related_papers": ["papers/a", "papers/b"],
+            "related_people": ["people/alice-example-org", "people/bob-example-org"],
+        }
+    ]

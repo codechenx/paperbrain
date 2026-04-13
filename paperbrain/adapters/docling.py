@@ -11,6 +11,89 @@ class DoclingAdapter(Protocol):
 
 
 class DoclingParser:
+    @staticmethod
+    def _extract_first_page_text(document: object, markdown_content: str) -> str:
+        texts = getattr(document, "texts", None)
+        if isinstance(texts, list):
+            parts: list[str] = []
+            for item in texts:
+                text = getattr(item, "text", None)
+                prov = getattr(item, "prov", None)
+                if not isinstance(text, str) or not text.strip() or not isinstance(prov, list):
+                    continue
+                if any(getattr(region, "page_no", None) == 1 for region in prov):
+                    parts.append(text.strip())
+            first_page_text = "\n".join(parts).strip()
+            if first_page_text:
+                return first_page_text
+        # Fallback: the markdown export is page-ordered, so the prefix approximates page 1.
+        return markdown_content[:4000].strip()
+
+    @staticmethod
+    def _extract_corresponding_authors_from_first_page(first_page_text: str) -> list[str]:
+        email_pattern = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+        seen: set[str] = set()
+        authors: list[str] = []
+        for line in first_page_text.splitlines():
+            lowered = line.casefold()
+            if "correspond" not in lowered and "e-mail" not in lowered and "email" not in lowered:
+                continue
+            for email in email_pattern.findall(line):
+                normalized = email.strip().lower()
+                if normalized and normalized not in seen:
+                    seen.add(normalized)
+                    authors.append(normalized)
+        if authors:
+            return authors
+        for email in email_pattern.findall(first_page_text):
+            normalized = email.strip().lower()
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                authors.append(normalized)
+        return authors
+
+    @staticmethod
+    def _infer_journal_from_first_page(first_page_text: str) -> str | None:
+        labeled = re.search(
+            r"(?im)^\s*(?:journal|publication|published in)\s*[:\-]\s*(.+)$",
+            first_page_text,
+        )
+        if labeled:
+            return labeled.group(1).strip()
+
+        # Common title-line journals visible on page 1.
+        keyword = re.search(
+            r"(?im)\b(nature(?:\s+[a-z][a-z\- ]+)?|science|cell(?:\s+[a-z][a-z\- ]+)?|the lancet(?:\s+[a-z][a-z\- ]+)?)\b",
+            first_page_text,
+        )
+        if keyword:
+            return " ".join(part.capitalize() for part in keyword.group(1).split())
+        return None
+
+    @staticmethod
+    def _infer_authors_from_first_page(first_page_text: str) -> list[str]:
+        lines = [line.strip() for line in first_page_text.splitlines() if line.strip()]
+        name_pattern = re.compile(r"[A-Z][a-zA-Z'`\-]+(?:\s+[A-Z](?:\.)?)?(?:\s+[A-Z][a-zA-Z'`\-]+)+")
+        for line in lines[:20]:
+            candidate = re.sub(r"\b\d+\b", " ", line)
+            candidate = " ".join(candidate.split())
+            if len(candidate) < 8 or len(candidate) > 240:
+                continue
+            if "@" in candidate or "http" in candidate.casefold():
+                continue
+            names = [name.strip() for name in name_pattern.findall(candidate)]
+            seen: set[str] = set()
+            deduped: list[str] = []
+            for name in names:
+                key = name.casefold()
+                if key in seen:
+                    continue
+                seen.add(key)
+                deduped.append(name)
+            if len(deduped) >= 2:
+                return deduped
+        return []
+
     def parse_pdf(self, path: Path) -> ParsedPaper:
         if not path.exists():
             raise FileNotFoundError(f"PDF file not found: {path}")
@@ -30,6 +113,7 @@ class DoclingParser:
             content = str(result.markdown)
         else:
             content = str(result)
+        first_page_text = self._extract_first_page_text(document, content)
 
         def _get_value(source: object, key: str) -> object:
             if source is None:
@@ -88,24 +172,33 @@ class DoclingParser:
             _get_value(doc_metadata, "publication"),
             _get_value(result_metadata, "journal"),
             _get_value(result_metadata, "publication"),
-            "Unknown Journal",
         )
+        if not journal:
+            journal = self._infer_journal_from_first_page(first_page_text)
+        if not journal:
+            journal = "Unknown Journal"
         year = _coerce_year(
             _get_value(doc_metadata, "year")
             or _get_value(doc_metadata, "publication_year")
             or _get_value(result_metadata, "year")
             or _get_value(result_metadata, "publication_year")
         )
+        if not year:
+            year = _coerce_year(first_page_text)
         authors = _coerce_authors(
             _get_value(doc_metadata, "authors")
             or _get_value(doc_metadata, "author")
             or _get_value(result_metadata, "authors")
             or _get_value(result_metadata, "author")
         )
+        if not authors:
+            authors = self._infer_authors_from_first_page(first_page_text)
         corresponding_authors = _coerce_authors(
             _get_value(doc_metadata, "corresponding_authors")
             or _get_value(result_metadata, "corresponding_authors")
         )
+        if not corresponding_authors:
+            corresponding_authors = self._extract_corresponding_authors_from_first_page(first_page_text)
 
         return ParsedPaper(
             title=title or path.stem,

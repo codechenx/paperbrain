@@ -10,10 +10,10 @@ class SummaryRepository(Protocol):
     def upsert_paper_card(self, card: dict) -> None:
         ...
 
-    def upsert_person_cards(self, cards: list[dict]) -> None:
+    def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
         ...
 
-    def upsert_topic_cards(self, cards: list[dict]) -> None:
+    def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
         ...
 
 
@@ -50,10 +50,10 @@ class SummarizeService:
             paper_cards.append(card)
 
         person_cards = self.llm.derive_person_cards(paper_cards)
-        self.repo.upsert_person_cards(person_cards)
+        self.repo.upsert_person_cards(person_cards, replace_existing=force_all)
 
         topic_cards = self.llm.derive_topic_cards(person_cards)
-        self.repo.upsert_topic_cards(topic_cards)
+        self.repo.upsert_topic_cards(topic_cards, replace_existing=force_all)
 
         return SummaryStats(
             paper_cards=len(paper_cards),

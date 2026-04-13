@@ -53,11 +53,13 @@ class FakeRepo:
         self.calls.append("paper")
         self.paper_cards.append(card)
 
-    def upsert_person_cards(self, cards: list[dict]) -> None:
+    def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+        _ = replace_existing
         self.calls.append("person")
         self.person_cards = cards
 
-    def upsert_topic_cards(self, cards: list[dict]) -> None:
+    def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+        _ = replace_existing
         self.calls.append("topic")
         self.topic_cards = cards
 
@@ -176,6 +178,63 @@ def test_summarize_persists_cards_and_returns_counts() -> None:
     ]
     assert result.paper_cards == 2
     assert result.person_cards == 2
+    assert result.topic_cards == 1
+
+
+def test_summarize_generates_person_topic_when_corresponding_authors_inferred() -> None:
+    class MissingAuthorRepo(FakeRepo):
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            self.force_all_seen = force_all
+            return [
+                FakePaper(
+                    slug="papers/missing-author",
+                    title="Missing Author Paper",
+                    journal="Nature",
+                    year=2024,
+                    authors=["A"],
+                    corresponding_authors=[],
+                    full_text="first-page text with email: inferred@example.org",
+                )
+            ]
+
+    class InferenceLLM(FakeLLM):
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            return {
+                "slug": metadata["slug"],
+                "type": "article",
+                "title": metadata["title"],
+                "summary": "x",
+                "corresponding_authors": ["inferred@example.org"],
+            }
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            assert paper_cards[0]["corresponding_authors"] == ["inferred@example.org"]
+            return [
+                {
+                    "slug": "people/inferred-example-org",
+                    "type": "person",
+                    "focus_area": "Inference",
+                    "related_papers": [paper_cards[0]["slug"]],
+                }
+            ]
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            return [
+                {
+                    "slug": "topics/inference",
+                    "type": "topic",
+                    "related_people": [person_cards[0]["slug"]],
+                    "related_papers": ["papers/missing-author"],
+                }
+            ]
+
+    repo = MissingAuthorRepo()
+    llm = InferenceLLM()
+    result = SummarizeService(repo=repo, llm=llm).run(force_all=True)
+
+    assert result.paper_cards == 1
+    assert result.person_cards == 1
     assert result.topic_cards == 1
 
 

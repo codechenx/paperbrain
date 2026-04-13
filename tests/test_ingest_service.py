@@ -161,3 +161,46 @@ def test_docling_parser_falls_back_to_defaults_when_metadata_missing(
     assert parsed.authors == []
     assert parsed.year == 1970
     assert parsed.journal == "Unknown Journal"
+
+
+def test_docling_parser_infers_corresponding_authors_and_journal_from_first_page_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+
+    class FakeProv:
+        def __init__(self, page_no: int) -> None:
+            self.page_no = page_no
+
+    class FakeTextItem:
+        def __init__(self, text: str, page_no: int) -> None:
+            self.text = text
+            self.prov = [FakeProv(page_no)]
+
+    class FakeDocument:
+        title = "First-page Metadata Test"
+        metadata = {}
+        texts = [
+            FakeTextItem("Nature Microbiology", 1),
+            FakeTextItem("Corresponding author: junyu@cuhk.edu.hk", 1),
+            FakeTextItem("page two content", 2),
+        ]
+
+        def export_to_markdown(self) -> str:
+            return "body"
+
+    class FakeConverter:
+        def convert(self, path: str):  # noqa: ANN201
+            _ = path
+            return types.SimpleNamespace(document=FakeDocument())
+
+    module = types.ModuleType("docling.document_converter")
+    module.DocumentConverter = FakeConverter
+    monkeypatch.setitem(sys.modules, "docling", types.ModuleType("docling"))
+    monkeypatch.setitem(sys.modules, "docling.document_converter", module)
+
+    parsed = DoclingParser().parse_pdf(pdf_path)
+
+    assert parsed.journal == "Nature Microbiology"
+    assert parsed.corresponding_authors == ["junyu@cuhk.edu.hk"]

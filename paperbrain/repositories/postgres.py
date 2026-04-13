@@ -81,6 +81,10 @@ def _has_any_explicit_fields(card: dict[str, Any], *keys: str) -> bool:
     return any(key in card for key in keys)
 
 
+def _strip_nul_bytes(value: str) -> str:
+    return value.replace("\x00", "")
+
+
 class PostgresRepo:
     def __init__(self, connection: Connection) -> None:
         self.connection = connection
@@ -304,12 +308,22 @@ class PostgresRepo:
         if row is None:
             raise ValueError(f"Unknown paper slug: {slug}")
 
-    def upsert_person_cards(self, cards: list[dict]) -> None:
+    def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
         if not cards:
+            if replace_existing:
+                with self.transaction():
+                    self.execute("DELETE FROM person_topic_links;")
+                    self.execute("DELETE FROM paper_person_links;")
+                    self.execute("DELETE FROM person_cards;")
             return
 
         relation_keys = ("related_papers", "paper_slugs", "papers")
+        incoming_slugs = [str(card.get("slug", "")).strip() for card in cards if str(card.get("slug", "")).strip()]
         with self.transaction():
+            if replace_existing:
+                self.execute("DELETE FROM person_topic_links WHERE person_slug <> ALL(%s);", (incoming_slugs,))
+                self.execute("DELETE FROM paper_person_links WHERE person_slug <> ALL(%s);", (incoming_slugs,))
+                self.execute("DELETE FROM person_cards WHERE slug <> ALL(%s);", (incoming_slugs,))
             for card in cards:
                 slug = str(card.get("slug", "")).strip()
                 if not slug:
@@ -336,13 +350,23 @@ class PostgresRepo:
                             (paper_slug, slug),
                         )
 
-    def upsert_topic_cards(self, cards: list[dict]) -> None:
+    def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
         if not cards:
+            if replace_existing:
+                with self.transaction():
+                    self.execute("DELETE FROM person_topic_links;")
+                    self.execute("DELETE FROM paper_topic_links;")
+                    self.execute("DELETE FROM topic_cards;")
             return
 
         paper_relation_keys = ("related_papers", "paper_slugs", "papers")
         person_relation_keys = ("related_people", "person_slugs", "people")
+        incoming_slugs = [str(card.get("slug", "")).strip() for card in cards if str(card.get("slug", "")).strip()]
         with self.transaction():
+            if replace_existing:
+                self.execute("DELETE FROM person_topic_links WHERE topic_slug <> ALL(%s);", (incoming_slugs,))
+                self.execute("DELETE FROM paper_topic_links WHERE topic_slug <> ALL(%s);", (incoming_slugs,))
+                self.execute("DELETE FROM topic_cards WHERE slug <> ALL(%s);", (incoming_slugs,))
             for card in cards:
                 slug = str(card.get("slug", "")).strip()
                 if not slug:
@@ -381,19 +405,25 @@ class PostgresRepo:
                         )
 
     def upsert_paper(self, paper: ParsedPaper, force: bool) -> str:
+        title = _strip_nul_bytes(paper.title)
+        journal = _strip_nul_bytes(paper.journal)
+        full_text = _strip_nul_bytes(paper.full_text)
+        authors = [_strip_nul_bytes(author) for author in paper.authors]
+        corresponding_authors = [_strip_nul_bytes(author) for author in paper.corresponding_authors]
+
         paper_hash = hashlib.sha1(paper.source_path.encode("utf-8")).hexdigest()[:12]
         paper_id = f"paper-{paper_hash}"
-        slug = f"{slugify(paper.title) or 'untitled-paper'}-{paper_hash}"
+        slug = f"{slugify(title) or 'untitled-paper'}-{paper_hash}"
         params = (
             paper_id,
             slug,
-            paper.title,
-            paper.journal,
+            title,
+            journal,
             paper.year,
-            json.dumps(paper.authors),
-            json.dumps(paper.corresponding_authors),
+            json.dumps(authors),
+            json.dumps(corresponding_authors),
             paper.source_path,
-            paper.full_text,
+            full_text,
         )
         if force:
             row = self.fetchone(
@@ -448,12 +478,13 @@ class PostgresRepo:
             self.execute("DELETE FROM paper_chunks WHERE paper_id = %s;", (paper_id,))
             for chunk_index, (chunk_text, vector) in enumerate(zip(chunks, vectors, strict=True)):
                 chunk_id = f"{paper_id}-chunk-{chunk_index}"
+                clean_chunk_text = _strip_nul_bytes(chunk_text)
                 self.execute(
                     """
                     INSERT INTO paper_chunks (id, paper_id, chunk_index, chunk_text)
                     VALUES (%s, %s, %s, %s);
                     """.strip(),
-                    (chunk_id, paper_id, chunk_index, chunk_text),
+                    (chunk_id, paper_id, chunk_index, clean_chunk_text),
                 )
                 vector_literal = f"[{', '.join(str(value) for value in vector)}]"
                 self.execute(

@@ -1,19 +1,85 @@
+import json
+import os
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 import typer
 
-from paperbrain.services.init import build_init_sql
+from paperbrain.adapters.docling import DoclingParser
+from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
+from paperbrain.adapters.llm import OpenAISummaryAdapter
+from paperbrain.adapters.openai_client import OpenAIClient
+from paperbrain.config import AppConfig, ConfigStore
+from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_SUMMARY_MODEL
+from paperbrain.db import connect
+from paperbrain.repositories.postgres import PostgresRepo
+from paperbrain.services.export import run_export
+from paperbrain.services.ingest import IngestService
+from paperbrain.services.init import run_init
+from paperbrain.services.lint import run_lint
+from paperbrain.services.search import SearchService
 from paperbrain.services.setup import run_setup
+from paperbrain.services.stats import run_stats
+from paperbrain.services.summarize import SummarizeService
 
 app = typer.Typer(no_args_is_help=True, help="PaperBrain CLI")
+DEFAULT_CONFIG_PATH = Path("./config/paperbrain.conf")
+
+
+@dataclass(slots=True)
+class RuntimeAdapters:
+    config: AppConfig
+    parser: DoclingParser
+    embeddings: OpenAIEmbeddingAdapter
+    llm: OpenAISummaryAdapter
+
+
+def build_runtime(config_path: Path) -> RuntimeAdapters:
+    config = ConfigStore(config_path).load()
+    client = OpenAIClient(api_key=config.openai_api_key)
+    return RuntimeAdapters(
+        config=config,
+        parser=DoclingParser(),
+        embeddings=OpenAIEmbeddingAdapter(client=client, model=config.embedding_model),
+        llm=OpenAISummaryAdapter(client=client, model=config.summary_model),
+    )
+
+
+@contextmanager
+def repo_from_url(database_url: str) -> Iterator[PostgresRepo]:
+    with connect(database_url, autocommit=False) as connection:
+        yield PostgresRepo(connection)
 
 
 @app.command()
 def setup(
     url: str = typer.Option(..., "--url", help="Postgres connection URL"),
-    config_path: Path = typer.Option(Path("~/.config/paperbrain.conf").expanduser(), "--config-path"),
+    openai_api_key: str | None = typer.Option(None, "--openai-api-key", help="OpenAI API key"),
+    summary_model: str = typer.Option(DEFAULT_SUMMARY_MODEL, "--summary-model"),
+    embedding_model: str = typer.Option(DEFAULT_EMBEDDING_MODEL, "--embedding-model"),
+    config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
+    test_connections: bool = typer.Option(
+        True,
+        "--test-connections/--no-test-connections",
+        help="Validate database and OpenAI connectivity before writing config",
+    ),
 ) -> None:
-    message = run_setup(database_url=url, config_path=config_path)
+    if openai_api_key is not None:
+        resolved_openai_api_key = openai_api_key.strip()
+    else:
+        resolved_openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not resolved_openai_api_key and test_connections:
+        resolved_openai_api_key = typer.prompt("OpenAI API key", hide_input=True).strip()
+    message = run_setup(
+        database_url=url,
+        openai_api_key=resolved_openai_api_key,
+        summary_model=summary_model,
+        embedding_model=embedding_model,
+        config_path=config_path,
+        test_connections=test_connections,
+    )
     typer.echo(message)
 
 
@@ -22,9 +88,8 @@ def init(
     url: str = typer.Option(..., "--url", help="Postgres connection URL"),
     force: bool = typer.Option(False, "--force", help="Drop and recreate all tables"),
 ) -> None:
-    _ = url
-    statements = build_init_sql(force=force)
-    typer.echo(f"Prepared {len(statements)} schema statements.")
+    applied = run_init(database_url=url, force=force)
+    typer.echo(f"Applied {applied} schema statements.")
 
 
 @app.command()
@@ -32,16 +97,30 @@ def ingest(
     path: Path = typer.Argument(..., exists=True),
     force_all: bool = typer.Option(False, "--force-all"),
     recursive: bool = typer.Option(False, "--recursive"),
+    config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
 ) -> None:
-    typer.echo(f"Ingest scaffold ready for path={path} force_all={force_all} recursive={recursive}")
+    runtime = build_runtime(config_path)
+    with repo_from_url(runtime.config.database_url) as repo:
+        inserted = IngestService(repo=repo, parser=runtime.parser, embeddings=runtime.embeddings).ingest_paths(
+            [str(path)], force_all=force_all, recursive=recursive
+        )
+    typer.echo(f"Ingested {inserted} paper(s).")
 
 
 @app.command()
 def browse(
     keyword: str = typer.Argument(...),
     card_type: str = typer.Option("all", "--type"),
+    config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
 ) -> None:
-    typer.echo(f"Browse scaffold ready for keyword={keyword} type={card_type}")
+    runtime = build_runtime(config_path)
+    with repo_from_url(runtime.config.database_url) as repo:
+        rows = SearchService(repo=repo, embedder=runtime.embeddings).browse(keyword, card_type)
+    if not rows:
+        typer.echo("No cards found.")
+        return
+    for row in rows:
+        typer.echo(json.dumps(row, sort_keys=True))
 
 
 @app.command()
@@ -49,26 +128,53 @@ def search(
     query: str = typer.Argument(...),
     top_k: int = typer.Option(10, "--top-k"),
     include_cards: bool = typer.Option(False, "--include-cards"),
+    config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
 ) -> None:
-    typer.echo(f"Search scaffold ready for query={query} top_k={top_k} include_cards={include_cards}")
+    runtime = build_runtime(config_path)
+    with repo_from_url(runtime.config.database_url) as repo:
+        rows = SearchService(repo=repo, embedder=runtime.embeddings).search(
+            query, top_k=top_k, include_cards=include_cards
+        )
+    if not rows:
+        typer.echo("No papers found.")
+        return
+    for row in rows:
+        typer.echo(json.dumps(row, sort_keys=True))
 
 
 @app.command()
-def summarize(force_all: bool = typer.Option(False, "--force-all")) -> None:
-    typer.echo(f"Summarize scaffold ready force_all={force_all}")
+def summarize(
+    force_all: bool = typer.Option(False, "--force-all"),
+    config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
+) -> None:
+    runtime = build_runtime(config_path)
+    with repo_from_url(runtime.config.database_url) as repo:
+        stats = SummarizeService(repo=repo, llm=runtime.llm).run(force_all=force_all)
+    typer.echo(f"Summarized cards: papers={stats.paper_cards} people={stats.person_cards} topics={stats.topic_cards}")
 
 
 @app.command()
-def lint() -> None:
-    typer.echo("Lint scaffold ready")
+def lint(config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path")) -> None:
+    config = ConfigStore(config_path).load()
+    stats = run_lint(config.database_url)
+    typer.echo(f"Linted {stats.checked} cards, fixed {stats.fixed}.")
 
 
 @app.command()
-def stats() -> None:
-    typer.echo("Stats scaffold ready")
+def stats(config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path")) -> None:
+    config = ConfigStore(config_path).load()
+    corpus = run_stats(config.database_url)
+    typer.echo(f"Corpus stats: papers={corpus.papers} authors={corpus.authors} topics={corpus.topics}")
 
 
 @app.command()
-def export(output_dir: Path = typer.Option(Path("./paperbrain-export"), "--output-dir")) -> None:
-    typer.echo(f"Export scaffold ready output_dir={output_dir}")
-
+def export(
+    output_dir: Path = typer.Option(Path("./paperbrain-export"), "--output-dir"),
+    config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
+) -> None:
+    config = ConfigStore(config_path).load()
+    stats = run_export(config.database_url, output_dir)
+    typer.echo(
+        f"Exported {stats.files_written} files (papers={stats.papers} people={stats.people} topics={stats.topics}) "
+        f"to {output_dir}"
+    )

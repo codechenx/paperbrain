@@ -1,4 +1,28 @@
+import json
 from pathlib import Path
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for value in values:
+        normalized = value.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        output.append(normalized)
+    return output
+
+
+def _wikilinks(values: list[str]) -> str:
+    slugs = _dedupe(values)
+    if not slugs:
+        return "None"
+    return ", ".join(f"[[{slug}]]" for slug in slugs)
+
+
+def _yaml_quoted(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
 
 
 def render_paper_markdown(
@@ -12,14 +36,14 @@ def render_paper_markdown(
     summary_block: str,
     related_topics: list[str],
 ) -> str:
-    people_links = ", ".join(f"[[{x}]]" for x in corresponding_authors) if corresponding_authors else "None"
-    topic_links = ", ".join(f"[[{x}]]" for x in related_topics) if related_topics else "None"
-    author_line = ", ".join(authors) if authors else "Unknown"
+    people_links = _wikilinks(corresponding_authors)
+    topic_links = _wikilinks(related_topics)
+    author_line = ", ".join(f'"{author}"' for author in _dedupe(authors))
     return (
         "---\n"
         f"slug: {slug}\n"
         "type: paper\n"
-        f'title: "{title}"\n'
+        f"title: {_yaml_quoted(title)}\n"
         f"authors: [{author_line}]\n"
         f"journal: {journal}\n"
         f"year: {year}\n"
@@ -32,7 +56,42 @@ def render_paper_markdown(
     )
 
 
+def render_person_markdown(
+    *,
+    slug: str,
+    name: str,
+    related_papers: list[str],
+    related_topics: list[str],
+) -> str:
+    return (
+        "---\n"
+        f"slug: {slug}\n"
+        "type: person\n"
+        f"name: {_yaml_quoted(name)}\n"
+        "---\n\n"
+        f"Related papers: {_wikilinks(related_papers)}\n"
+        f"Related topics: {_wikilinks(related_topics)}\n"
+    )
+
+
+def render_topic_markdown(
+    *,
+    slug: str,
+    topic: str,
+    related_papers: list[str],
+    related_people: list[str],
+) -> str:
+    return (
+        "---\n"
+        f"slug: {slug}\n"
+        "type: topic\n"
+        f"topic: {_yaml_quoted(topic)}\n"
+        "---\n\n"
+        f"Related papers: {_wikilinks(related_papers)}\n"
+        f"Related people: {_wikilinks(related_people)}\n"
+    )
+
+
 def write_markdown(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-

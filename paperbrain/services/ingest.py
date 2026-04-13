@@ -48,9 +48,11 @@ class IngestService:
             if not force_all and self.repo.has_source(source_path):
                 continue
             parsed = self.parser.parse_pdf(file_path)
-            paper_id = self.repo.upsert_paper(parsed, force=force_all)
             chunks = chunk_words(parsed.full_text, self.chunk_size_words)
             vectors = self.embeddings.embed(chunks)
+            if len(chunks) != len(vectors):
+                raise ValueError("Embedding count must match chunk count")
+            paper_id = self.repo.upsert_paper(parsed, force=force_all)
             self.repo.replace_chunks(paper_id, chunks, vectors)
             inserted += 1
         return inserted
@@ -67,4 +69,3 @@ class IngestService:
                 pattern = "**/*.pdf" if recursive else "*.pdf"
                 discovered.extend(sorted(path.glob(pattern)))
         return discovered
-

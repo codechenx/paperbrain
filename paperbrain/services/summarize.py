@@ -48,13 +48,15 @@ class SummarizeService:
             card = self.llm.summarize_paper(paper.full_text, metadata)
             self.repo.upsert_paper_card(card)
             paper_cards.append(card)
+
         person_cards = self.llm.derive_person_cards(paper_cards)
-        topic_cards = self.llm.derive_topic_cards(person_cards)
         self.repo.upsert_person_cards(person_cards)
+
+        topic_cards = self.llm.derive_topic_cards(person_cards)
         self.repo.upsert_topic_cards(topic_cards)
+
         return SummaryStats(
             paper_cards=len(paper_cards),
             person_cards=len(person_cards),
             topic_cards=len(topic_cards),
         )
-

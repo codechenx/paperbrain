@@ -2,6 +2,7 @@ import re
 
 _LINK_PATTERN = re.compile(r"\[\[([^\]]+)\]\]")
 _INLINE_WHITESPACE = re.compile(r"[ \t]+")
+_LEADING_WHITESPACE = re.compile(r"^[ \t]*")
 
 
 def normalize_whitespace(text: str) -> str:
@@ -10,14 +11,16 @@ def normalize_whitespace(text: str) -> str:
     previous_blank = False
 
     for line in lines:
-        stripped = line.strip()
-        if not stripped:
+        if not line.strip():
             if normalized_lines and not previous_blank:
                 normalized_lines.append("")
             previous_blank = True
             continue
 
-        normalized_lines.append(_INLINE_WHITESPACE.sub(" ", stripped))
+        rstripped = line.rstrip(" \t")
+        leading = _LEADING_WHITESPACE.match(rstripped).group(0)
+        content = rstripped[len(leading) :]
+        normalized_lines.append(f"{leading}{_INLINE_WHITESPACE.sub(' ', content)}")
         previous_blank = False
 
     while normalized_lines and normalized_lines[-1] == "":

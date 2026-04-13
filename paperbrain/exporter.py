@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 
@@ -20,6 +21,10 @@ def _wikilinks(values: list[str]) -> str:
     return ", ".join(f"[[{slug}]]" for slug in slugs)
 
 
+def _yaml_quoted(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
 def render_paper_markdown(
     *,
     slug: str,
@@ -38,7 +43,7 @@ def render_paper_markdown(
         "---\n"
         f"slug: {slug}\n"
         "type: paper\n"
-        f'title: "{title}"\n'
+        f"title: {_yaml_quoted(title)}\n"
         f"authors: [{author_line}]\n"
         f"journal: {journal}\n"
         f"year: {year}\n"
@@ -62,7 +67,7 @@ def render_person_markdown(
         "---\n"
         f"slug: {slug}\n"
         "type: person\n"
-        f'name: "{name}"\n'
+        f"name: {_yaml_quoted(name)}\n"
         "---\n\n"
         f"Related papers: {_wikilinks(related_papers)}\n"
         f"Related topics: {_wikilinks(related_topics)}\n"
@@ -80,7 +85,7 @@ def render_topic_markdown(
         "---\n"
         f"slug: {slug}\n"
         "type: topic\n"
-        f'topic: "{topic}"\n'
+        f"topic: {_yaml_quoted(topic)}\n"
         "---\n\n"
         f"Related papers: {_wikilinks(related_papers)}\n"
         f"Related people: {_wikilinks(related_people)}\n"

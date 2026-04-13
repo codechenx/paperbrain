@@ -43,3 +43,8 @@ def test_cli_lint_invokes_run_lint(monkeypatch: Any) -> None:
     assert result.exit_code == 0
     assert "Linted 4 cards, fixed 1." in result.output
     assert captured["database_url"] == "postgresql://localhost:5432/paperbrain"
+
+
+def test_normalize_whitespace_preserves_leading_indentation() -> None:
+    source = "- Parent\n  - Child   item\n    - Grand   child\n"
+    assert normalize_whitespace(source) == "- Parent\n  - Child item\n    - Grand child\n"

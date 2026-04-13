@@ -5,6 +5,8 @@ from typer.testing import CliRunner
 
 from paperbrain.cli import app
 from paperbrain.exporter import render_paper_markdown
+from paperbrain.exporter import render_person_markdown
+from paperbrain.exporter import render_topic_markdown
 from paperbrain.services.export import ExportService, ExportStats
 
 
@@ -107,3 +109,32 @@ def test_cli_export_invokes_run_export(monkeypatch: Any, tmp_path: Path) -> None
     assert "papers=1 people=2 topics=3" in result.output
     assert captured["database_url"] == "postgresql://localhost:5432/paperbrain"
     assert captured["output_dir"] == output_dir
+
+
+def test_render_markdown_frontmatter_escapes_quoted_values() -> None:
+    paper_md = render_paper_markdown(
+        slug="papers/example",
+        title="A \"quoted\" title",
+        authors=["Author"],
+        corresponding_authors=[],
+        journal="Journal",
+        year=2024,
+        summary_block="Summary",
+        related_topics=[],
+    )
+    person_md = render_person_markdown(
+        slug="people/example",
+        name="Dr. \"Q\"",
+        related_papers=[],
+        related_topics=[],
+    )
+    topic_md = render_topic_markdown(
+        slug="topics/example",
+        topic="Cell \"signaling\"",
+        related_papers=[],
+        related_people=[],
+    )
+
+    assert "title: \"A \\\"quoted\\\" title\"" in paper_md
+    assert "name: \"Dr. \\\"Q\\\"\"" in person_md
+    assert "topic: \"Cell \\\"signaling\\\"\"" in topic_md

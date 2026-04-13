@@ -8,21 +8,23 @@ Exported cards currently include summary marker comments and do not always follo
 
 1. Remove all marker comments like `<!-- paperbrain_paper_summary:start/end -->` from exports.
 2. Render paper/person/topic cards using `Design.md` section titles and structure.
-3. During `summarize`, if `corresponding_authors` is missing, infer it via OpenAI from paper text/title.
+3. During `summarize`, if `corresponding_authors` is missing, first try OCR/text-pattern extraction for corresponding-author lines, then use OpenAI inference from paper text/title as fallback.
 4. Use inferred corresponding authors for person/topic derivation.
 5. Add `index.md` in export output, grouped by Papers / People / Topics.
 
 ## Data Flow Changes
 
 1. Summarization produces paper card body in `Design.md` format.
-2. If `corresponding_authors` is empty, run a targeted inference prompt and fill the field.
+2. If `corresponding_authors` is empty:
+   - try OCR/text extraction for likely corresponding-author patterns
+   - if still empty, run a targeted OpenAI inference prompt and fill the field
 3. Person cards derive from populated corresponding authors.
 4. Topic cards derive from person-card question themes and preserve related links.
 5. Export writes normalized markdown cards and an `index.md`.
 
 ## Error Handling
 
-- If corresponding-author inference fails for a paper, report warning with the affected paper slug.
+- If OCR + OpenAI corresponding-author extraction fails for a paper, report warning with the affected paper slug.
 - Continue export/summarize for remaining papers.
 
 ## Tests
@@ -32,6 +34,6 @@ Exported cards currently include summary marker comments and do not always follo
   - `Design.md` section titles in paper/person/topic markdown
   - `index.md` generation and grouped links
 - Summarize tests for:
-  - fallback corresponding-author inference when metadata is empty
+  - OCR-based corresponding-author extraction when metadata is empty
+  - OpenAI fallback inference when OCR extraction returns empty
   - downstream person/topic card generation from inferred data
-

@@ -8,15 +8,15 @@ from paperbrain.services.search import SearchService, hybrid_score
 class FakeSearchRepo:
     def __init__(self) -> None:
         self.browse_calls: list[tuple[str, str]] = []
-        self.search_calls: list[tuple[str, int]] = []
+        self.search_calls: list[tuple[str, list[float], int]] = []
         self.related_calls: list[list[str]] = []
 
     def browse(self, keyword: str, card_type: str) -> list[dict]:
         self.browse_calls.append((keyword, card_type))
         return [{"slug": "papers/a", "type": card_type, "text": keyword}]
 
-    def search_hybrid(self, query: str, top_k: int) -> list[dict]:
-        self.search_calls.append((query, top_k))
+    def search_hybrid(self, query: str, query_vector: list[float], top_k: int) -> list[dict]:
+        self.search_calls.append((query, query_vector, top_k))
         return [{"paper_slug": "papers/a", "keyword_rank": 0.8, "vector_rank": 0.2}][:top_k]
 
     def fetch_related_cards(self, paper_slugs: list[str]) -> dict[str, list[dict]]:
@@ -63,6 +63,16 @@ class FakeConnection:
         return FakeCursor(self)
 
 
+class FakeEmbedder:
+    def __init__(self, vector: list[float]) -> None:
+        self.vector = vector
+        self.calls: list[list[str]] = []
+
+    def embed(self, chunks: list[str]) -> list[list[float]]:
+        self.calls.append(chunks)
+        return [self.vector]
+
+
 def test_hybrid_score_blends_keyword_and_vector() -> None:
     assert hybrid_score(keyword_rank=0.8, vector_rank=0.2, alpha=0.6) == 0.56
 
@@ -79,11 +89,13 @@ def test_browse_delegates_to_repository() -> None:
 
 def test_search_include_cards_appends_related_cards() -> None:
     repo = FakeSearchRepo()
-    service = SearchService(repo=repo)
+    embedder = FakeEmbedder([0.12, 0.34])
+    service = SearchService(repo=repo, embedder=embedder)
 
     rows = service.search("p53", top_k=1, include_cards=True)
 
-    assert repo.search_calls == [("p53", 1)]
+    assert embedder.calls == [["p53"]]
+    assert repo.search_calls == [("p53", [0.12, 0.34], 1)]
     assert repo.related_calls == [["papers/a"]]
     assert rows[0]["score"] == 0.56
     assert rows[0]["cards"][0]["slug"] == "people/alice"
@@ -91,13 +103,35 @@ def test_search_include_cards_appends_related_cards() -> None:
 
 def test_search_without_include_cards_skips_related_lookup() -> None:
     repo = FakeSearchRepo()
-    service = SearchService(repo=repo)
+    embedder = FakeEmbedder([0.4, 0.6])
+    service = SearchService(repo=repo, embedder=embedder)
 
     rows = service.search("p53", top_k=1, include_cards=False)
 
-    assert repo.search_calls == [("p53", 1)]
+    assert embedder.calls == [["p53"]]
+    assert repo.search_calls == [("p53", [0.4, 0.6], 1)]
     assert repo.related_calls == []
     assert "cards" not in rows[0]
+
+
+def test_search_without_embedder_uses_deterministic_vector() -> None:
+    repo = FakeSearchRepo()
+    service = SearchService(repo=repo)
+
+    first_rows = service.search("p53", top_k=1, include_cards=False)
+    second_rows = service.search("p53", top_k=1, include_cards=False)
+
+    assert len(repo.search_calls) == 2
+    first_query, first_vector, first_top_k = repo.search_calls[0]
+    second_query, second_vector, second_top_k = repo.search_calls[1]
+    assert first_query == "p53"
+    assert second_query == "p53"
+    assert first_top_k == 1
+    assert second_top_k == 1
+    assert len(first_vector) == 1536
+    assert first_vector == second_vector
+    assert first_rows[0]["paper_slug"] == "papers/a"
+    assert second_rows[0]["paper_slug"] == "papers/a"
 
 
 def test_postgres_browse_reads_persisted_cards() -> None:
@@ -124,10 +158,12 @@ def test_postgres_search_hybrid_returns_ranked_rows() -> None:
     connection = FakeConnection(rows_sequence=[[('papers/a', 0.8, 0.2)]])
     repo = PostgresRepo(connection)
 
-    rows = repo.search_hybrid("p53 mutation", top_k=3)
+    rows = repo.search_hybrid("p53 mutation", query_vector=[0.1, 0.2], top_k=3)
 
     assert rows == [{"paper_slug": "papers/a", "keyword_rank": 0.8, "vector_rank": 0.2}]
-    assert connection.executed[0][1] == ("p53 mutation", "p53 mutation", 3)
+    assert "JOIN paper_embeddings e ON e.chunk_id = c.id" in connection.executed[0][0]
+    assert "<=>" in connection.executed[0][0]
+    assert connection.executed[0][1] == ("p53 mutation", "[0.1, 0.2]", 3)
 
 
 def test_postgres_fetch_related_cards_groups_by_paper_slug() -> None:

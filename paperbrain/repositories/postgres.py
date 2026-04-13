@@ -168,9 +168,10 @@ class PostgresRepo:
             output.append(card)
         return output
 
-    def search_hybrid(self, query: str, top_k: int) -> list[dict]:
-        if top_k <= 0:
+    def search_hybrid(self, query: str, query_vector: list[float], top_k: int) -> list[dict]:
+        if top_k <= 0 or not query_vector:
             return []
+        vector_literal = f"[{', '.join(str(value) for value in query_vector)}]"
 
         rows = self.fetchall(
             """
@@ -182,11 +183,12 @@ class PostgresRepo:
                         0
                     )::float AS keyword_rank,
                     COALESCE(
-                        AVG(ts_rank_cd(to_tsvector('english', c.chunk_text), websearch_to_tsquery('english', %s))),
+                        MAX(1 - (e.embedding <=> %s::vector)),
                         0
                     )::float AS vector_rank
                 FROM papers p
                 JOIN paper_chunks c ON c.paper_id = p.id
+                JOIN paper_embeddings e ON e.chunk_id = c.id
                 GROUP BY p.slug
             )
             SELECT paper_slug, keyword_rank, vector_rank
@@ -195,7 +197,7 @@ class PostgresRepo:
             ORDER BY (0.6 * keyword_rank + 0.4 * vector_rank) DESC, paper_slug
             LIMIT %s;
             """.strip(),
-            (query, query, top_k),
+            (query, vector_literal, top_k),
         )
         return [
             {

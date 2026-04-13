@@ -1,6 +1,10 @@
+import json
 from collections.abc import Iterator, Sequence
 from typing import Any
 
+import pytest
+
+from paperbrain.models import ParsedPaper
 from paperbrain.repositories.postgres import PostgresRepo
 
 
@@ -49,15 +53,20 @@ class FakeConnection:
         *,
         row: tuple[Any, ...] | None = None,
         rows: Sequence[tuple[Any, ...]] = (),
+        row_sequence: Sequence[tuple[Any, ...] | None] | None = None,
     ) -> None:
         self.executed: list[tuple[str, Sequence[Any] | None]] = []
         self.row = row
         self.rows = rows
+        self.row_sequence = list(row_sequence) if row_sequence is not None else None
         self.transaction_entered = 0
         self.transaction_exited = 0
 
     def cursor(self) -> FakeCursor:
-        return FakeCursor(self.executed, row=self.row, rows=self.rows)
+        row = self.row
+        if self.row_sequence is not None and self.row_sequence:
+            row = self.row_sequence.pop(0)
+        return FakeCursor(self.executed, row=row, rows=self.rows)
 
     def transaction(self) -> FakeTransaction:
         return FakeTransaction(self)
@@ -102,3 +111,123 @@ def test_transaction_yields_connection_inside_context() -> None:
         assert connection.transaction_exited == 0
 
     assert connection.transaction_exited == 1
+
+
+def _make_parsed_paper() -> ParsedPaper:
+    return ParsedPaper(
+        title="A Study on Testing",
+        journal="Journal of Tests",
+        year=2024,
+        authors=["Alice", "Bob"],
+        corresponding_authors=["Alice"],
+        full_text="Full paper text.",
+        source_path="/papers/testing.pdf",
+    )
+
+
+def _normalize_sql(sql: str) -> str:
+    return " ".join(sql.split())
+
+
+def test_has_source_returns_true_when_row_exists() -> None:
+    connection = FakeConnection(row=(1,))
+    repo = PostgresRepo(connection)
+
+    assert repo.has_source("/papers/testing.pdf") is True
+    assert connection.executed == [("SELECT 1 FROM papers WHERE source_path = %s", ("/papers/testing.pdf",))]
+
+
+def test_has_source_returns_false_when_row_missing() -> None:
+    connection = FakeConnection(row=None)
+    repo = PostgresRepo(connection)
+
+    assert repo.has_source("/papers/missing.pdf") is False
+    assert connection.executed == [("SELECT 1 FROM papers WHERE source_path = %s", ("/papers/missing.pdf",))]
+
+
+def test_upsert_paper_force_false_inserts_and_returns_new_id() -> None:
+    connection = FakeConnection(row=("paper-new",))
+    repo = PostgresRepo(connection)
+
+    paper_id = repo.upsert_paper(_make_parsed_paper(), force=False)
+
+    assert paper_id == "paper-new"
+    assert len(connection.executed) == 1
+    sql, params = connection.executed[0]
+    assert "ON CONFLICT (source_path) DO NOTHING" in _normalize_sql(sql)
+    assert params is not None
+    assert params[7] == "/papers/testing.pdf"
+    assert params[5] == json.dumps(["Alice", "Bob"])
+    assert params[6] == json.dumps(["Alice"])
+
+
+def test_upsert_paper_force_false_falls_back_to_existing_id_on_conflict() -> None:
+    connection = FakeConnection(row_sequence=[None, ("paper-existing",)])
+    repo = PostgresRepo(connection)
+
+    paper_id = repo.upsert_paper(_make_parsed_paper(), force=False)
+
+    assert paper_id == "paper-existing"
+    assert len(connection.executed) == 2
+    insert_sql, insert_params = connection.executed[0]
+    select_sql, select_params = connection.executed[1]
+    assert "ON CONFLICT (source_path) DO NOTHING" in _normalize_sql(insert_sql)
+    assert insert_params is not None
+    assert insert_params[7] == "/papers/testing.pdf"
+    assert select_sql == "SELECT id FROM papers WHERE source_path = %s"
+    assert select_params == ("/papers/testing.pdf",)
+
+
+def test_upsert_paper_force_true_uses_update_on_conflict() -> None:
+    connection = FakeConnection(row=("paper-updated",))
+    repo = PostgresRepo(connection)
+
+    paper_id = repo.upsert_paper(_make_parsed_paper(), force=True)
+
+    assert paper_id == "paper-updated"
+    assert len(connection.executed) == 1
+    sql, params = connection.executed[0]
+    normalized_sql = _normalize_sql(sql)
+    assert "ON CONFLICT (source_path) DO UPDATE SET" in normalized_sql
+    assert "updated_at = NOW()" in normalized_sql
+    assert params is not None
+    assert params[7] == "/papers/testing.pdf"
+    assert params[8] == "Full paper text."
+
+
+def test_replace_chunks_deletes_then_reinserts_in_order() -> None:
+    connection = FakeConnection()
+    repo = PostgresRepo(connection)
+
+    repo.replace_chunks(
+        "paper-123",
+        chunks=["first chunk", "second chunk"],
+        vectors=[[0.1, 0.2], [1.5, 2.75]],
+    )
+
+    assert connection.transaction_entered == 1
+    assert connection.transaction_exited == 1
+    assert len(connection.executed) == 6
+    assert "DELETE FROM paper_embeddings" in connection.executed[0][0]
+    assert connection.executed[0][1] == ("paper-123",)
+    assert connection.executed[1] == ("DELETE FROM paper_chunks WHERE paper_id = %s;", ("paper-123",))
+    assert "INSERT INTO paper_chunks" in connection.executed[2][0]
+    assert connection.executed[2][1] == ("paper-123-chunk-0", "paper-123", 0, "first chunk")
+    assert "INSERT INTO paper_embeddings" in connection.executed[3][0]
+    assert connection.executed[3][1] == ("paper-123-chunk-0", "[0.1, 0.2]")
+    assert "INSERT INTO paper_chunks" in connection.executed[4][0]
+    assert connection.executed[4][1] == ("paper-123-chunk-1", "paper-123", 1, "second chunk")
+    assert "INSERT INTO paper_embeddings" in connection.executed[5][0]
+    assert connection.executed[5][1] == ("paper-123-chunk-1", "[1.5, 2.75]")
+
+
+def test_replace_chunks_raises_on_length_mismatch_without_sql() -> None:
+    connection = FakeConnection()
+    repo = PostgresRepo(connection)
+
+    with pytest.raises(ValueError, match="chunks and vectors length mismatch"):
+        repo.replace_chunks("paper-123", chunks=["one"], vectors=[[0.1], [0.2]])
+
+    assert connection.executed == []
+    assert connection.transaction_entered == 0
+    assert connection.transaction_exited == 0

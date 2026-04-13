@@ -25,7 +25,7 @@ class FakeResponsesAPI:
 
     def create(self, *, model: str, input: str) -> SimpleNamespace:
         self.calls.append({"model": model, "input": input})
-        return SimpleNamespace(output_text="summary output")
+        return SimpleNamespace(output_text="  summary output \n")
 
 
 class FakeSDKClient:
@@ -76,9 +76,10 @@ def test_openai_embedding_adapter_uses_client_with_configured_model() -> None:
 def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
     client = FakeOpenAIClient()
     adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    paper_text = "x" * 9000
 
     paper_card = adapter.summarize_paper(
-        "paper text",
+        paper_text,
         {
             "slug": "papers/test-paper",
             "title": "Test Paper",
@@ -110,4 +111,4 @@ def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
             "topic": "Research Synthesis",
         }
     ]
-    assert client.summary_calls == [{"text": "paper text", "model": "gpt-4.1-mini"}]
+    assert client.summary_calls == [{"text": f"Test Paper\n\n{paper_text[:8000]}", "model": "gpt-4.1-mini"}]

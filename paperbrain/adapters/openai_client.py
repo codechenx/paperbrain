@@ -16,4 +16,4 @@ class OpenAIClient:
 
     def summarize(self, text: str, model: str) -> str:
         response = self.sdk_client.responses.create(model=model, input=text)
-        return response.output_text
+        return response.output_text.strip()

@@ -53,11 +53,13 @@ class OpenAISummaryAdapter:
         self.model = model
 
     def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
-        summary = self.client.summarize(paper_text, model=self.model)
+        title = metadata.get("title", "Untitled")
+        prompt = f"{title}\n\n{paper_text[:8000]}"
+        summary = self.client.summarize(prompt, model=self.model)
         return {
             "slug": metadata["slug"],
             "type": "article",
-            "title": metadata.get("title", "Untitled"),
+            "title": title,
             "summary": summary,
             "corresponding_authors": metadata.get("corresponding_authors", []),
         }

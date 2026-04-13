@@ -29,7 +29,7 @@ class DoclingParser:
             content = str(result.markdown)
         else:
             content = str(result)
-        title = getattr(document, "title", None) or path.stem.replace("_", " ").strip() or "Untitled Paper"
+        title = path.stem
         return ParsedPaper(
             title=title,
             journal="Unknown Journal",

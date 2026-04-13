@@ -129,6 +129,11 @@ def _normalize_sql(sql: str) -> str:
     return " ".join(sql.split())
 
 
+def _expected_generated_id_and_slug() -> tuple[str, str]:
+    paper_hash = "43aa915ed471"
+    return (f"paper-{paper_hash}", f"a-study-on-testing-{paper_hash}")
+
+
 def test_has_source_returns_true_when_row_exists() -> None:
     connection = FakeConnection(row=(1,))
     repo = PostgresRepo(connection)
@@ -156,6 +161,9 @@ def test_upsert_paper_force_false_inserts_and_returns_new_id() -> None:
     sql, params = connection.executed[0]
     assert "ON CONFLICT (source_path) DO NOTHING" in _normalize_sql(sql)
     assert params is not None
+    expected_id, expected_slug = _expected_generated_id_and_slug()
+    assert params[0] == expected_id
+    assert params[1] == expected_slug
     assert params[7] == "/papers/testing.pdf"
     assert params[5] == json.dumps(["Alice", "Bob"])
     assert params[6] == json.dumps(["Alice"])
@@ -173,7 +181,29 @@ def test_upsert_paper_force_false_falls_back_to_existing_id_on_conflict() -> Non
     select_sql, select_params = connection.executed[1]
     assert "ON CONFLICT (source_path) DO NOTHING" in _normalize_sql(insert_sql)
     assert insert_params is not None
+    expected_id, expected_slug = _expected_generated_id_and_slug()
+    assert insert_params[0] == expected_id
+    assert insert_params[1] == expected_slug
     assert insert_params[7] == "/papers/testing.pdf"
+    assert select_sql == "SELECT id FROM papers WHERE source_path = %s"
+    assert select_params == ("/papers/testing.pdf",)
+
+
+def test_upsert_paper_force_false_raises_when_insert_and_fallback_missing() -> None:
+    connection = FakeConnection(row_sequence=[None, None])
+    repo = PostgresRepo(connection)
+
+    with pytest.raises(RuntimeError, match=r"^Failed to upsert paper$"):
+        repo.upsert_paper(_make_parsed_paper(), force=False)
+
+    assert len(connection.executed) == 2
+    insert_sql, insert_params = connection.executed[0]
+    select_sql, select_params = connection.executed[1]
+    assert "ON CONFLICT (source_path) DO NOTHING" in _normalize_sql(insert_sql)
+    assert insert_params is not None
+    expected_id, expected_slug = _expected_generated_id_and_slug()
+    assert insert_params[0] == expected_id
+    assert insert_params[1] == expected_slug
     assert select_sql == "SELECT id FROM papers WHERE source_path = %s"
     assert select_params == ("/papers/testing.pdf",)
 
@@ -191,6 +221,9 @@ def test_upsert_paper_force_true_uses_update_on_conflict() -> None:
     assert "ON CONFLICT (source_path) DO UPDATE SET" in normalized_sql
     assert "updated_at = NOW()" in normalized_sql
     assert params is not None
+    expected_id, expected_slug = _expected_generated_id_and_slug()
+    assert params[0] == expected_id
+    assert params[1] == expected_slug
     assert params[7] == "/papers/testing.pdf"
     assert params[8] == "Full paper text."
 

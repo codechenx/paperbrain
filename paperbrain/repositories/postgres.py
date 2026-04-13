@@ -93,7 +93,7 @@ class PostgresRepo:
             return str(row[0])
         existing = self.fetchone("SELECT id FROM papers WHERE source_path = %s", (paper.source_path,))
         if existing is None:
-            raise RuntimeError(f"Failed to upsert paper for source path: {paper.source_path}")
+            raise RuntimeError("Failed to upsert paper")
         return str(existing[0])
 
     def replace_chunks(self, paper_id: str, chunks: list[str], vectors: list[list[float]]) -> None:

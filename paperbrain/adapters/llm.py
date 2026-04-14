@@ -760,6 +760,8 @@ class OpenAISummaryAdapter:
     @staticmethod
     def _validate_topic_cards_payload(payload: list[object], person_cards: list[dict]) -> list[dict]:
         known_people, known_papers, known_questions = OpenAISummaryAdapter._topic_reference_index(person_cards)
+        if not payload:
+            raise ValueError("empty topic payload")
         validated: list[dict] = []
         for entry in payload:
             if not isinstance(entry, dict):
@@ -797,6 +799,8 @@ class OpenAISummaryAdapter:
             related_papers = OpenAISummaryAdapter._merge_unique(
                 [str(value).strip() for value in related_papers_raw if str(value).strip()]
             )
+            if not related_people or not related_papers:
+                raise ValueError("topic entry must have non-empty related_people and related_papers")
             if any(person_slug not in known_people for person_slug in related_people):
                 raise ValueError("topic related_people must reference known person slugs")
             if any(paper_slug not in known_papers for paper_slug in related_papers):

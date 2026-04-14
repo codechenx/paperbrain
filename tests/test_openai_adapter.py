@@ -569,6 +569,87 @@ def test_openai_summary_adapter_generates_topics_from_all_person_big_questions_v
     ]
 
 
+def test_openai_summary_adapter_rejects_empty_topic_payload_array() -> None:
+    class EmptyTopicArrayClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate topic card JSON"):
+                return "[]"
+            return "{}"
+
+    client = EmptyTopicArrayClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    person_cards = [
+        {
+            "slug": "people/alice-example-org",
+            "type": "person",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/a"],
+                }
+            ],
+            "related_papers": ["papers/a"],
+        }
+    ]
+
+    with pytest.raises(ValueError, match=r"topic generation failed after 2 attempts: empty topic payload"):
+        adapter.derive_topic_cards(person_cards)
+
+
+def test_openai_summary_adapter_rejects_topic_with_empty_top_level_related_lists() -> None:
+    class EmptyTopLevelRelationsClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate topic card JSON"):
+                return json.dumps(
+                    [
+                        {
+                            "slug": "topics/gut-microbiome-and-lung-cancer-treatment",
+                            "type": "topic",
+                            "topic": "gut microbiome and lung cancer treatment",
+                            "related_big_questions": [
+                                {
+                                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                                    "why_important": "Could personalize treatment and improve outcomes.",
+                                    "related_papers": ["papers/a"],
+                                    "related_people": ["people/alice-example-org"],
+                                }
+                            ],
+                            "related_people": [],
+                            "related_papers": [],
+                        }
+                    ]
+                )
+            return "{}"
+
+    client = EmptyTopLevelRelationsClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    person_cards = [
+        {
+            "slug": "people/alice-example-org",
+            "type": "person",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/a"],
+                }
+            ],
+            "related_papers": ["papers/a"],
+        }
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match=r"topic generation failed after 2 attempts: topic entry must have non-empty related_people and related_papers",
+    ):
+        adapter.derive_topic_cards(person_cards)
+
+
 def test_openai_summary_adapter_retries_topic_generation_once_then_raises() -> None:
     # Red-phase test.
     class RetryTopicClient(FakeOpenAIClient):

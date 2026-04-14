@@ -566,25 +566,14 @@ def test_openai_summary_adapter_retries_topic_generation_once_then_raises() -> N
             if text.startswith("Generate topic card JSON"):
                 self.topic_attempts += 1
                 return json.dumps(
-                    {
-                        "topic_cards": [
-                            {
-                                "slug": "topics/gut-microbiome-and-lung-cancer-treatment",
-                                "type": "topic",
-                                "topic": "gut microbiome and lung cancer treatment",
-                                "related_big_questions": [
-                                    {
-                                        "question": "How can gut microbiome signals improve lung cancer treatment response?",
-                                        "why_important": "Could personalize treatment and improve outcomes.",
-                                        "related_papers": ["papers/a"],
-                                        "related_people": ["people/alice-example-org"],
-                                    }
-                                ],
-                                "related_people": ["people/alice-example-org"],
-                                "related_papers": ["papers/a"],
-                            }
-                        ]
-                    }
+                    [
+                        {
+                            "slug": "topics/x",
+                            "type": "topic",
+                            "topic": "x",
+                            "related_big_questions": [],
+                        }
+                    ]
                 )
             return "{}"
 

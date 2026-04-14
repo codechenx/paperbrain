@@ -204,3 +204,88 @@ def test_docling_parser_infers_corresponding_authors_and_journal_from_first_page
 
     assert parsed.journal == "Nature Microbiology"
     assert parsed.corresponding_authors == ["junyu@cuhk.edu.hk"]
+
+
+def test_docling_parser_removes_image_payload_but_keeps_caption_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+
+    markdown = """
+# Results
+![Figure 1](figures/figure-1.png)
+<img src="figures/figure-2.png" alt="Figure 2 image" />
+![Inline data](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA)
+
+Figure 1. p53 staining intensity in treated cells.
+Legend: Blue bars indicate controls.
+"""
+
+    class FakeDocument:
+        title = "Image Payload Test"
+        metadata = {}
+
+        def export_to_markdown(self) -> str:
+            return markdown
+
+    class FakeConverter:
+        def convert(self, path: str):  # noqa: ANN201
+            _ = path
+            return types.SimpleNamespace(document=FakeDocument())
+
+    module = types.ModuleType("docling.document_converter")
+    module.DocumentConverter = FakeConverter
+    monkeypatch.setitem(sys.modules, "docling", types.ModuleType("docling"))
+    monkeypatch.setitem(sys.modules, "docling.document_converter", module)
+
+    parsed = DoclingParser().parse_pdf(pdf_path)
+
+    assert "![Figure 1]" not in parsed.full_text
+    assert "<img" not in parsed.full_text
+    assert "data:image/png;base64" not in parsed.full_text
+    assert "Figure 1. p53 staining intensity in treated cells." in parsed.full_text
+    assert "Legend: Blue bars indicate controls." in parsed.full_text
+
+
+@pytest.mark.parametrize("references_heading", ["## References", "## Bibliography", "## Works Cited"])
+def test_docling_parser_trims_references_section(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, references_heading: str
+) -> None:
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+
+    markdown = f"""
+# Main Findings
+This section should remain.
+The discussion ends here.
+
+{references_heading}
+[1] Example, A. et al. 2021.
+[2] Example, B. et al. 2022.
+"""
+
+    class FakeDocument:
+        title = "References Trim Test"
+        metadata = {}
+
+        def export_to_markdown(self) -> str:
+            return markdown
+
+    class FakeConverter:
+        def convert(self, path: str):  # noqa: ANN201
+            _ = path
+            return types.SimpleNamespace(document=FakeDocument())
+
+    module = types.ModuleType("docling.document_converter")
+    module.DocumentConverter = FakeConverter
+    monkeypatch.setitem(sys.modules, "docling", types.ModuleType("docling"))
+    monkeypatch.setitem(sys.modules, "docling.document_converter", module)
+
+    parsed = DoclingParser().parse_pdf(pdf_path)
+
+    assert "This section should remain." in parsed.full_text
+    assert "The discussion ends here." in parsed.full_text
+    assert references_heading not in parsed.full_text
+    assert "[1] Example, A. et al. 2021." not in parsed.full_text
+    assert "[2] Example, B. et al. 2022." not in parsed.full_text

@@ -452,6 +452,62 @@ def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
     assert client.summary_calls[3]["text"].startswith("Generate topic card JSON")
 
 
+def test_openai_summary_adapter_extracts_title_and_metadata_first_from_two_page_window() -> None:
+    class MetadataFirstClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Extract bibliographic metadata from the first-two-pages OCR/text"):
+                return json.dumps(
+                    {
+                        "title": "LLM Extracted Title",
+                        "authors": ["A", "B"],
+                        "journal": "Nature",
+                        "year": 2025,
+                        "corresponding_authors": ["author@example.org"],
+                    }
+                )
+            return "generated summary"
+
+    client = MetadataFirstClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    paper_text = "page-1\n" + ("x" * 9000) + "\nTAIL-MARKER-SHOULD-NOT-BE-IN-METADATA-PROMPT"
+
+    card = adapter.summarize_paper(paper_text, {"slug": "papers/test-paper", "title": "Original Title"})
+
+    assert card["title"] == "LLM Extracted Title"
+    assert card["authors"] == ["A", "B"]
+    assert card["journal"] == "Nature"
+    assert card["year"] == 2025
+    assert card["corresponding_authors"] == ["author@example.org"]
+    assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-two-pages OCR/text")
+    assert "title (string)" in client.summary_calls[0]["text"]
+    assert "corresponding_authors (array of strings)" in client.summary_calls[0]["text"]
+    assert "TAIL-MARKER-SHOULD-NOT-BE-IN-METADATA-PROMPT" not in client.summary_calls[0]["text"]
+    assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
+
+
+def test_openai_summary_adapter_uses_defaults_without_heuristic_metadata_fallback() -> None:
+    class EmptyMetadataClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Extract bibliographic metadata from the first-two-pages OCR/text"):
+                return "{}"
+            return "generated summary"
+
+    client = EmptyMetadataClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    card = adapter.summarize_paper(
+        "Nature 2025 Corresponding author: person@lab.org",
+        {"slug": "papers/test-paper", "title": "Seed Title"},
+    )
+
+    assert card["title"] == "Seed Title"
+    assert card["authors"] == []
+    assert card["journal"] == "Unknown"
+    assert card["year"] == 0
+    assert card["corresponding_authors"] == []
+
+
 def test_openai_summary_adapter_infers_corresponding_authors_from_first_page_text() -> None:
     client = FakeOpenAIClient()
     adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")

@@ -721,8 +721,9 @@ class OpenAISummaryAdapter:
                 return self._validate_person_big_questions(payload, linked_papers_set)
             except ValueError as exc:
                 last_error = exc
+        person_slug = str(person_seed.get("slug", "")).strip() or "(unknown person)"
         detail = f": {last_error}" if last_error else ""
-        raise ValueError(f"person generation failed after 2 attempts{detail}")
+        raise ValueError(f"person generation failed after 2 attempts for {person_slug}{detail}")
 
     def _infer_corresponding_authors(self, paper_text: str, title: str) -> list[str]:
         first_page_text = paper_text[:4000]
@@ -824,7 +825,29 @@ class DeterministicLLMAdapter:
         }
 
     def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
-        return _derive_person_cards(paper_cards)
+        paper_cards_by_slug = {str(card.get("slug", "")).strip(): card for card in paper_cards}
+        person_cards: list[dict] = []
+        for seed in _derive_person_cards(paper_cards):
+            related_papers = [str(slug).strip() for slug in seed.get("related_papers", []) if str(slug).strip()]
+            primary_paper = paper_cards_by_slug.get(related_papers[0], {}) if related_papers else {}
+            paper_title = str(primary_paper.get("title", "")).strip()
+            name = str(seed.get("name", "")).strip()
+            focus_label = paper_title or seed.get("affiliation") or "research synthesis"
+            question = paper_title or f"How can {name or 'this researcher'} advance this research area?"
+            person_cards.append(
+                {
+                    **seed,
+                    "focus_area": [str(focus_label)],
+                    "big_questions": [
+                        {
+                            "question": question,
+                            "why_important": "Provides a stable, deterministic research direction.",
+                            "related_papers": related_papers,
+                        }
+                    ],
+                }
+            )
+        return person_cards
 
     def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
         return _derive_topic_cards(person_cards)

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
-from paperbrain.adapters.llm import OpenAISummaryAdapter
+from paperbrain.adapters.llm import DeterministicLLMAdapter, OpenAISummaryAdapter
 from paperbrain.adapters.openai_client import OpenAIClient
 
 
@@ -198,6 +198,26 @@ def test_openai_summary_adapter_raises_after_second_invalid_person_generation_at
     assert len(
         [call for call in client.summary_calls if call["text"].startswith("Generate person card JSON")]
     ) == 2
+
+
+def test_openai_summary_adapter_person_generation_error_contains_person_slug_context() -> None:
+    class AlwaysInvalidPersonClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate person card JSON"):
+                return '{"focus_area": [], "big_questions": []}'
+            return "{}"
+
+    client = AlwaysInvalidPersonClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+
+    with pytest.raises(
+        ValueError,
+        match=r"person generation failed after 2 attempts.*people/a-b-org",
+    ):
+        adapter.derive_person_cards(
+            [{"slug": "papers/test-paper", "title": "T", "summary": "S", "corresponding_authors": ["a@b.org"]}]
+        )
 
 
 def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
@@ -544,3 +564,26 @@ def test_topic_derivation_merges_duplicate_big_questions_across_people() -> None
             "related_people": ["people/alice-example-org", "people/bob-example-org"],
         }
     ]
+
+
+def test_deterministic_adapter_person_cards_include_focus_and_big_questions_contract() -> None:
+    adapter = DeterministicLLMAdapter()
+
+    person_cards = adapter.derive_person_cards(
+        [
+            {
+                "slug": "papers/test-paper",
+                "title": "Test Paper",
+                "summary": "Key question solved: How does this method work?",
+                "corresponding_authors": ["Alice Example <alice@example.org>"],
+            }
+        ]
+    )
+
+    assert person_cards[0]["slug"] == "people/alice-example-org"
+    assert person_cards[0]["focus_area"]
+    assert all(isinstance(area, str) and area.strip() for area in person_cards[0]["focus_area"])
+    assert person_cards[0]["big_questions"]
+    assert person_cards[0]["big_questions"][0]["question"].strip()
+    assert person_cards[0]["big_questions"][0]["why_important"].strip()
+    assert person_cards[0]["big_questions"][0]["related_papers"] == ["papers/test-paper"]

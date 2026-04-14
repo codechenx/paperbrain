@@ -12,6 +12,35 @@ class DoclingAdapter(Protocol):
 
 class DoclingParser:
     @staticmethod
+    def _strip_image_payloads(markdown_content: str) -> str:
+        cleaned = markdown_content.replace("\r\n", "\n").replace("\r", "\n")
+        cleaned = re.sub(r"!\[[^\]]*]\([^)]+\)", "", cleaned)
+        cleaned = re.sub(r"(?is)<img\b[^>]*>", "", cleaned)
+        cleaned = re.sub(
+            r"(?i)data:image/[a-z0-9.+-]+;base64,[a-z0-9+/=]+",
+            "",
+            cleaned,
+        )
+        cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned.strip()
+
+    @staticmethod
+    def _trim_references_section(markdown_content: str) -> str:
+        atx_heading = re.search(
+            r"(?im)^[ \t]{0,3}#{1,6}[ \t]+(?:references|bibliography|works[ \t]+cited)\b[^\n]*$",
+            markdown_content,
+        )
+        setext_heading = re.search(
+            r"(?im)^[ \t]*(?:references|bibliography|works[ \t]+cited)[ \t]*\n[ \t]*[-=]{2,}[ \t]*$",
+            markdown_content,
+        )
+        starts = [match.start() for match in (atx_heading, setext_heading) if match]
+        if not starts:
+            return markdown_content.strip()
+        return markdown_content[: min(starts)].rstrip()
+
+    @staticmethod
     def _extract_first_page_text(document: object, markdown_content: str) -> str:
         texts = getattr(document, "texts", None)
         if isinstance(texts, list):
@@ -113,6 +142,8 @@ class DoclingParser:
             content = str(result.markdown)
         else:
             content = str(result)
+        content = self._strip_image_payloads(content)
+        content = self._trim_references_section(content)
         first_page_text = self._extract_first_page_text(document, content)
 
         def _get_value(source: object, key: str) -> object:

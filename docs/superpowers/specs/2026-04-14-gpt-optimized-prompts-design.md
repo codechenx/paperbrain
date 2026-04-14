@@ -48,7 +48,7 @@ Design:
 ### 2) Paper summary prompt (`_build_summary`)
 
 Role framing (required):
-- “You are a senior reviewer of a famous scientific journal. You always evaluate the innovation and logic of scientific papers.”
+- “You are a senior reviewer for a top-tier scientific journal who focuses on evaluating the innovation, impact, and logical rigor of scientific papers.”
 
 Design:
 - Explicitly state: summarize using only provided text.

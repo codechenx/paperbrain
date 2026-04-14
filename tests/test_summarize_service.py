@@ -589,13 +589,15 @@ def test_summarize_article_cards_only_used_for_person_derivation() -> None:
                 return {
                     "slug": metadata["slug"],
                     "type": "article",
+                    "paper_type": "article",
                     "title": metadata["title"],
                     "summary": "article summary",
                     "corresponding_authors": metadata["corresponding_authors"],
                 }
             return {
                 "slug": metadata["slug"],
-                "type": "review",
+                "type": "article",
+                "paper_type": "review",
                 "title": metadata["title"],
                 "summary": "review summary",
                 "corresponding_authors": metadata["corresponding_authors"],
@@ -603,6 +605,7 @@ def test_summarize_article_cards_only_used_for_person_derivation() -> None:
 
         def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
             assert [card["slug"] for card in paper_cards] == ["papers/chen-p53-nature-2024-abc123"]
+            assert [card["paper_type"] for card in paper_cards] == ["article"]
             assert [card["type"] for card in paper_cards] == ["article"]
             return [
                 {
@@ -639,7 +642,8 @@ def test_summarize_review_only_papers_produce_no_person_or_topic_cards() -> None
             _ = paper_text
             return {
                 "slug": metadata["slug"],
-                "type": "review",
+                "type": "article",
+                "paper_type": "review",
                 "title": metadata["title"],
                 "summary": "review summary",
                 "corresponding_authors": metadata["corresponding_authors"],

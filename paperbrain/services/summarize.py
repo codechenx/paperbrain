@@ -93,7 +93,12 @@ class SummarizeService:
             self.repo.upsert_paper_card(card)
             paper_cards.append(card)
 
-        person_cards = self.llm.derive_person_cards(paper_cards)
+        article_paper_cards = [
+            card
+            for card in paper_cards
+            if str(card.get("paper_type", "")).strip().lower() == "article"
+        ]
+        person_cards = self.llm.derive_person_cards(article_paper_cards)
         topic_cards = self.llm.derive_topic_cards(person_cards)
 
         _apply_person_focus_areas(person_cards, topic_cards)

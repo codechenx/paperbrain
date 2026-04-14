@@ -777,6 +777,82 @@ def test_openai_summary_adapter_retries_topic_generation_once_then_raises() -> N
     assert client.topic_attempts == 2
 
 
+def test_openai_summary_adapter_allows_topic_question_with_provenance_consistent_non_cartesian_association() -> None:
+    class NonCartesianAssociationClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate topic card JSON"):
+                return json.dumps(
+                    [
+                        {
+                            "slug": "topics/microbiome-and-treatment-response",
+                            "type": "topic",
+                            "topic": "microbiome and treatment response",
+                            "related_big_questions": [
+                                {
+                                    "question": "How can microbiome signals improve treatment response?",
+                                    "why_important": "Could personalize treatment and improve outcomes.",
+                                    "related_papers": ["papers/a", "papers/b"],
+                                    "related_people": ["people/alice-example-org", "people/bob-example-org"],
+                                }
+                            ],
+                            "related_people": ["people/alice-example-org", "people/bob-example-org"],
+                            "related_papers": ["papers/a", "papers/b"],
+                        }
+                    ]
+                )
+            return "{}"
+
+    client = NonCartesianAssociationClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    person_cards = [
+        {
+            "slug": "people/alice-example-org",
+            "type": "person",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": "How can microbiome signals improve treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/a"],
+                }
+            ],
+            "related_papers": ["papers/a"],
+        },
+        {
+            "slug": "people/bob-example-org",
+            "type": "person",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": "How can microbiome signals improve treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/b"],
+                }
+            ],
+            "related_papers": ["papers/b"],
+        },
+    ]
+
+    assert adapter.derive_topic_cards(person_cards) == [
+        {
+            "slug": "topics/microbiome-and-treatment-response",
+            "type": "topic",
+            "topic": "microbiome and treatment response",
+            "related_big_questions": [
+                {
+                    "question": "How can microbiome signals improve treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/a", "papers/b"],
+                    "related_people": ["people/alice-example-org", "people/bob-example-org"],
+                }
+            ],
+            "related_people": ["people/alice-example-org", "people/bob-example-org"],
+            "related_papers": ["papers/a", "papers/b"],
+        }
+    ]
+
+
 def test_openai_summary_adapter_rejects_topic_question_with_mismatched_person_paper_association() -> None:
     class MismatchedQuestionAssociationClient(FakeOpenAIClient):
         def summarize(self, text: str, model: str) -> str:  # noqa: ARG002

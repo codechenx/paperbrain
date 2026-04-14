@@ -851,11 +851,18 @@ class OpenAISummaryAdapter:
                     raise ValueError("related_big_questions people do not match source big-question links")
                 if any(paper_slug not in question_ref["papers"] for paper_slug in question_papers):
                     raise ValueError("related_big_questions papers do not match source big-question links")
-                if any(
-                    (person_slug, paper_slug) not in question_ref["pairs"]
+                source_pairs = question_ref["pairs"]
+                people_without_link = [
+                    person_slug
                     for person_slug in question_people
+                    if not any((person_slug, paper_slug) in source_pairs for paper_slug in question_papers)
+                ]
+                papers_without_link = [
+                    paper_slug
                     for paper_slug in question_papers
-                ):
+                    if not any((person_slug, paper_slug) in source_pairs for person_slug in question_people)
+                ]
+                if people_without_link or papers_without_link:
                     raise ValueError(
                         "related_big_questions person/paper associations must match source big-question links"
                     )

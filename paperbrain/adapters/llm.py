@@ -664,6 +664,9 @@ class OpenAISummaryAdapter:
 
     @staticmethod
     def _validate_person_big_questions(payload: dict, allowed_papers: set[str]) -> list[dict]:
+        if "focus_area" not in payload or payload.get("focus_area") != []:
+            raise ValueError("focus_area must be present and equal to []")
+
         big_questions = payload.get("big_questions")
         if not isinstance(big_questions, list) or not big_questions:
             raise ValueError("missing non-empty big_questions")
@@ -747,11 +750,14 @@ class OpenAISummaryAdapter:
                         "why_important": question_why,
                         "people": set(),
                         "papers": set(),
+                        "pairs": set(),
                     },
                 )
                 if person_slug:
                     question_ref["people"].add(person_slug)
                 question_ref["papers"].update(question_papers)
+                if person_slug:
+                    question_ref["pairs"].update((person_slug, paper_slug) for paper_slug in question_papers)
                 if question_why and not question_ref["why_important"]:
                     question_ref["why_important"] = question_why
 
@@ -845,6 +851,14 @@ class OpenAISummaryAdapter:
                     raise ValueError("related_big_questions people do not match source big-question links")
                 if any(paper_slug not in question_ref["papers"] for paper_slug in question_papers):
                     raise ValueError("related_big_questions papers do not match source big-question links")
+                if any(
+                    (person_slug, paper_slug) not in question_ref["pairs"]
+                    for person_slug in question_people
+                    for paper_slug in question_papers
+                ):
+                    raise ValueError(
+                        "related_big_questions person/paper associations must match source big-question links"
+                    )
 
                 validated_questions.append(
                     {

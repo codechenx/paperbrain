@@ -199,6 +199,85 @@ def test_openai_summary_adapter_retries_person_generation_once_then_succeeds() -
     assert client.person_attempts == 2
 
 
+def test_openai_summary_adapter_retries_when_person_focus_area_is_not_empty() -> None:
+    class RetryOnFocusAreaClient(FakeOpenAIClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.person_attempts = 0
+
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate person card JSON"):
+                self.person_attempts += 1
+                if self.person_attempts == 1:
+                    return json.dumps(
+                        {
+                            "focus_area": ["immunotherapy"],
+                            "big_questions": [
+                                {
+                                    "question": "How do we robustly validate signatures?",
+                                    "why_important": "Avoids false biomarker claims.",
+                                    "related_papers": ["papers/test-paper"],
+                                }
+                            ],
+                        }
+                    )
+                return json.dumps(
+                    {
+                        "focus_area": [],
+                        "big_questions": [
+                            {
+                                "question": "How do we robustly validate signatures?",
+                                "why_important": "Avoids false biomarker claims.",
+                                "related_papers": ["papers/test-paper"],
+                            }
+                        ],
+                    }
+                )
+            return "{}"
+
+    client = RetryOnFocusAreaClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    cards = adapter.derive_person_cards(
+        [{"slug": "papers/test-paper", "title": "T", "summary": "S", "corresponding_authors": ["a@b.org"]}]
+    )
+
+    assert cards[0]["big_questions"][0]["question"] == "How do we robustly validate signatures?"
+    assert cards[0]["focus_area"] == []
+    assert client.person_attempts == 2
+
+
+def test_openai_summary_adapter_raises_when_person_focus_area_is_not_empty_after_retries() -> None:
+    class NonEmptyFocusAreaClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate person card JSON"):
+                return json.dumps(
+                    {
+                        "focus_area": ["immunotherapy"],
+                        "big_questions": [
+                            {
+                                "question": "How do we robustly validate signatures?",
+                                "why_important": "Avoids false biomarker claims.",
+                                "related_papers": ["papers/test-paper"],
+                            }
+                        ],
+                    }
+                )
+            return "{}"
+
+    client = NonEmptyFocusAreaClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+
+    with pytest.raises(
+        ValueError,
+        match=r"person generation failed after 2 attempts.*focus_area must be present and equal to \[\]",
+    ):
+        adapter.derive_person_cards(
+            [{"slug": "papers/test-paper", "title": "T", "summary": "S", "corresponding_authors": ["a@b.org"]}]
+        )
+
+
 def test_openai_summary_adapter_raises_after_second_invalid_person_generation_attempt() -> None:
     class AlwaysInvalidPersonClient(FakeOpenAIClient):
         def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
@@ -697,6 +776,69 @@ def test_openai_summary_adapter_retries_topic_generation_once_then_raises() -> N
 
     assert client.topic_attempts == 2
 
+
+def test_openai_summary_adapter_rejects_topic_question_with_mismatched_person_paper_association() -> None:
+    class MismatchedQuestionAssociationClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate topic card JSON"):
+                return json.dumps(
+                    [
+                        {
+                            "slug": "topics/microbiome-and-treatment-response",
+                            "type": "topic",
+                            "topic": "microbiome and treatment response",
+                            "related_big_questions": [
+                                {
+                                    "question": "How can microbiome signals improve treatment response?",
+                                    "why_important": "Could personalize treatment and improve outcomes.",
+                                    "related_papers": ["papers/b"],
+                                    "related_people": ["people/alice-example-org"],
+                                }
+                            ],
+                            "related_people": ["people/alice-example-org"],
+                            "related_papers": ["papers/b"],
+                        }
+                    ]
+                )
+            return "{}"
+
+    client = MismatchedQuestionAssociationClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    person_cards = [
+        {
+            "slug": "people/alice-example-org",
+            "type": "person",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": "How can microbiome signals improve treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/a"],
+                }
+            ],
+            "related_papers": ["papers/a"],
+        },
+        {
+            "slug": "people/bob-example-org",
+            "type": "person",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": "How can microbiome signals improve treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/b"],
+                }
+            ],
+            "related_papers": ["papers/b"],
+        },
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match=r"topic generation failed after 2 attempts: related_big_questions person/paper associations must match source big-question links",
+    ):
+        adapter.derive_topic_cards(person_cards)
 
 def test_deterministic_adapter_person_cards_include_focus_and_big_questions_contract() -> None:
     adapter = DeterministicLLMAdapter()

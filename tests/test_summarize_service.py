@@ -1,3 +1,4 @@
+import copy
 from dataclasses import dataclass
 from typing import Any
 
@@ -56,7 +57,8 @@ class FakeRepo:
     def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
         _ = replace_existing
         self.calls.append("person")
-        self.person_cards = cards
+        assert all(card.get("focus_area") for card in cards)
+        self.person_cards = copy.deepcopy(cards)
 
     def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
         _ = replace_existing
@@ -172,6 +174,7 @@ def test_summarize_persists_cards_and_returns_counts() -> None:
     assert repo.calls == ["paper", "paper", "person", "topic"]
     assert llm.person_input == repo.paper_cards
     assert llm.topic_input == repo.person_cards
+    assert all(card["focus_area"] for card in repo.person_cards)
     assert [card["slug"] for card in repo.paper_cards] == [
         "papers/chen-p53-nature-2024-abc123",
         "papers/lee-immunity-cell-2023-def456",
@@ -448,5 +451,10 @@ def test_summarize_no_linked_topic_raises_value_error() -> None:
                 }
             ]
 
+    repo = FakeRepo()
     with pytest.raises(ValueError, match=r"No linked topics found for person card"):
-        SummarizeService(repo=FakeRepo(), llm=NoTopicLinkLLM()).run(force_all=False)
+        SummarizeService(repo=repo, llm=NoTopicLinkLLM()).run(force_all=False)
+
+    assert repo.calls == ["paper", "paper"]
+    assert repo.person_cards == []
+    assert repo.topic_cards == []

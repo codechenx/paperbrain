@@ -358,7 +358,7 @@ def test_summarize_raises_value_error_when_person_has_no_linked_topic() -> None:
     repo = MissingTopicRepo()
     llm = MissingTopicLLM()
 
-    with pytest.raises(ValueError, match=r"no linked topic"):
+    with pytest.raises(ValueError, match=r"No linked topics found for person card"):
         SummarizeService(repo=repo, llm=llm).run(force_all=False)
 
 

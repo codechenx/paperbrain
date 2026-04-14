@@ -579,3 +579,88 @@ def test_summarize_no_linked_topic_raises_value_error() -> None:
     assert repo.calls == ["paper", "paper"]
     assert repo.person_cards == []
     assert repo.topic_cards == []
+
+
+def test_summarize_article_cards_only_used_for_person_derivation() -> None:
+    class MixedCardTypesLLM(FakeLLM):
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            if metadata["slug"] == "papers/chen-p53-nature-2024-abc123":
+                return {
+                    "slug": metadata["slug"],
+                    "type": "article",
+                    "title": metadata["title"],
+                    "summary": "article summary",
+                    "corresponding_authors": metadata["corresponding_authors"],
+                }
+            return {
+                "slug": metadata["slug"],
+                "type": "review",
+                "title": metadata["title"],
+                "summary": "review summary",
+                "corresponding_authors": metadata["corresponding_authors"],
+            }
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            assert [card["slug"] for card in paper_cards] == ["papers/chen-p53-nature-2024-abc123"]
+            assert [card["type"] for card in paper_cards] == ["article"]
+            return [
+                {
+                    "slug": "people/alice-university-org",
+                    "type": "person",
+                    "related_papers": [paper_cards[0]["slug"]],
+                }
+            ]
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            return [
+                {
+                    "slug": "topics/cancer-genetics",
+                    "type": "topic",
+                    "topic": "Cancer Genetics",
+                    "related_people": [person_cards[0]["slug"]],
+                    "related_papers": [person_cards[0]["related_papers"][0]],
+                }
+            ]
+
+    repo = FakeRepo()
+    llm = MixedCardTypesLLM()
+
+    result = SummarizeService(repo=repo, llm=llm).run(force_all=False)
+
+    assert result.paper_cards == 2
+    assert result.person_cards == 1
+    assert result.topic_cards == 1
+
+
+def test_summarize_review_only_papers_produce_no_person_or_topic_cards() -> None:
+    class ReviewOnlyLLM(FakeLLM):
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            return {
+                "slug": metadata["slug"],
+                "type": "review",
+                "title": metadata["title"],
+                "summary": "review summary",
+                "corresponding_authors": metadata["corresponding_authors"],
+            }
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            self.person_input = list(paper_cards)
+            return []
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            self.topic_input = list(person_cards)
+            return []
+
+    repo = FakeRepo()
+    llm = ReviewOnlyLLM()
+
+    result = SummarizeService(repo=repo, llm=llm).run(force_all=False)
+
+    assert llm.person_input == []
+    assert llm.topic_input == []
+    assert repo.person_cards == []
+    assert repo.topic_cards == []
+    assert result.person_cards == 0
+    assert result.topic_cards == 0

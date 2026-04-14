@@ -238,6 +238,127 @@ def test_summarize_generates_person_topic_when_corresponding_authors_inferred() 
     assert result.topic_cards == 1
 
 
+def test_summarize_focus_area_from_generated_topics() -> None:
+    class TopicLinkRepo(FakeRepo):
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            self.force_all_seen = force_all
+            return [
+                FakePaper(
+                    slug="papers/topic-link",
+                    title="Topic Link Paper",
+                    journal="Nature",
+                    year=2024,
+                    authors=["A"],
+                    corresponding_authors=["Alice Research <alice@university.org>"],
+                    full_text="topic-link text",
+                )
+            ]
+
+    class TopicLinkLLM(FakeLLM):
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            return {
+                "slug": metadata["slug"],
+                "type": "article",
+                "title": metadata["title"],
+                "summary": "x",
+                "corresponding_authors": metadata["corresponding_authors"],
+            }
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            return [
+                {
+                    "slug": "people/alice-university-org",
+                    "type": "person",
+                    "related_papers": [paper_cards[0]["slug"]],
+                }
+            ]
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            return [
+                {
+                    "slug": "topics/cancer-genetics",
+                    "type": "topic",
+                    "topic": "Cancer Genetics",
+                    "related_people": [person_cards[0]["slug"]],
+                    "related_papers": [person_cards[0]["related_papers"][0]],
+                }
+            ]
+
+    repo = TopicLinkRepo()
+    llm = TopicLinkLLM()
+
+    result = SummarizeService(repo=repo, llm=llm).run(force_all=False)
+
+    assert result.paper_cards == 1
+    assert result.person_cards == 1
+    assert result.topic_cards == 1
+    assert repo.person_cards[0]["focus_area"] == ["Cancer Genetics"]
+    assert repo.topic_cards[0]["related_people"] == ["people/alice-university-org"]
+
+
+def test_summarize_raises_value_error_when_person_has_no_linked_topic() -> None:
+    class MissingTopicRepo(FakeRepo):
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            self.force_all_seen = force_all
+            return [
+                FakePaper(
+                    slug="papers/missing-topic",
+                    title="Missing Topic Paper",
+                    journal="Nature",
+                    year=2024,
+                    authors=["A"],
+                    corresponding_authors=[
+                        "Alice Research <alice@university.org>",
+                        "Bob Research <bob@university.org>",
+                    ],
+                    full_text="missing-topic text",
+                )
+            ]
+
+    class MissingTopicLLM(FakeLLM):
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            return {
+                "slug": metadata["slug"],
+                "type": "article",
+                "title": metadata["title"],
+                "summary": "x",
+                "corresponding_authors": metadata["corresponding_authors"],
+            }
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            return [
+                {
+                    "slug": "people/alice-university-org",
+                    "type": "person",
+                    "related_papers": [paper_cards[0]["slug"]],
+                },
+                {
+                    "slug": "people/bob-university-org",
+                    "type": "person",
+                    "related_papers": [paper_cards[0]["slug"]],
+                },
+            ]
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            return [
+                {
+                    "slug": "topics/cancer-genetics",
+                    "type": "topic",
+                    "topic": "Cancer Genetics",
+                    "related_people": [person_cards[0]["slug"]],
+                    "related_papers": [person_cards[0]["related_papers"][0]],
+                }
+            ]
+
+    repo = MissingTopicRepo()
+    llm = MissingTopicLLM()
+
+    with pytest.raises(ValueError, match=r"no linked topic"):
+        SummarizeService(repo=repo, llm=llm).run(force_all=False)
+
+
 def test_postgres_list_papers_for_summary_decodes_json_columns() -> None:
     connection = FakeConnection(
         rows_sequence=[

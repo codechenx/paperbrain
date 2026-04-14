@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
-from paperbrain.adapters.llm import DeterministicLLMAdapter, OpenAISummaryAdapter
+from paperbrain.adapters.llm import OpenAISummaryAdapter
 from paperbrain.adapters.openai_client import OpenAIClient
 import paperbrain.adapters.llm as llm_module
 
@@ -1041,25 +1041,3 @@ def test_openai_summary_adapter_rejects_topic_question_with_mismatched_person_pa
         match=r"topic generation failed after 2 attempts: related_big_questions person/paper associations must match source big-question links",
     ):
         adapter.derive_topic_cards(person_cards)
-
-def test_deterministic_adapter_person_cards_include_focus_and_big_questions_contract() -> None:
-    adapter = DeterministicLLMAdapter()
-
-    person_cards = adapter.derive_person_cards(
-        [
-            {
-                "slug": "papers/test-paper",
-                "title": "Test Paper",
-                "summary": "Key question solved: How does this method work?",
-                "corresponding_authors": ["Alice Example <alice@example.org>"],
-            }
-        ]
-    )
-
-    assert person_cards[0]["slug"] == "people/alice-example-org"
-    assert person_cards[0]["focus_area"]
-    assert all(isinstance(area, str) and area.strip() for area in person_cards[0]["focus_area"])
-    assert person_cards[0]["big_questions"]
-    assert person_cards[0]["big_questions"][0]["question"].strip()
-    assert person_cards[0]["big_questions"][0]["why_important"].strip()
-    assert person_cards[0]["big_questions"][0]["related_papers"] == ["papers/test-paper"]

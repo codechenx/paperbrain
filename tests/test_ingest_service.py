@@ -249,7 +249,50 @@ Legend: Blue bars indicate controls.
     assert "Legend: Blue bars indicate controls." in parsed.full_text
 
 
-@pytest.mark.parametrize("references_heading", ["## References", "## Bibliography", "## Works Cited"])
+def test_docling_parser_removes_newline_wrapped_data_image_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+
+    markdown = """
+# Results
+Wrapped payload:
+data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA
+AAABCAIAAACQd1Pe==
+
+Valid text should remain.
+"""
+
+    class FakeDocument:
+        title = "Wrapped Payload Test"
+        metadata = {}
+
+        def export_to_markdown(self) -> str:
+            return markdown
+
+    class FakeConverter:
+        def convert(self, path: str):  # noqa: ANN201
+            _ = path
+            return types.SimpleNamespace(document=FakeDocument())
+
+    module = types.ModuleType("docling.document_converter")
+    module.DocumentConverter = FakeConverter
+    monkeypatch.setitem(sys.modules, "docling", types.ModuleType("docling"))
+    monkeypatch.setitem(sys.modules, "docling.document_converter", module)
+
+    parsed = DoclingParser().parse_pdf(pdf_path)
+
+    assert "data:image/png;base64" not in parsed.full_text
+    assert "iVBORw0KGgoAAAANSUhEUgAAAAUA" not in parsed.full_text
+    assert "AAABCAIAAACQd1Pe==" not in parsed.full_text
+    assert "Valid text should remain." in parsed.full_text
+
+
+@pytest.mark.parametrize(
+    "references_heading",
+    ["## References", "## Bibliography", "## Works Cited", "References"],
+)
 def test_docling_parser_trims_references_section(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, references_heading: str
 ) -> None:

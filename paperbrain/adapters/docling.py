@@ -17,7 +17,7 @@ class DoclingParser:
         cleaned = re.sub(r"!\[[^\]]*]\([^)]+\)", "", cleaned)
         cleaned = re.sub(r"(?is)<img\b[^>]*>", "", cleaned)
         cleaned = re.sub(
-            r"(?i)data:image/[a-z0-9.+-]+;base64,[a-z0-9+/=]+",
+            r"(?im)data:image/[a-z0-9.+-]+;base64,\s*[a-z0-9+/=]+(?:[ \t]*\n[ \t]*[a-z0-9+/=]+)*",
             "",
             cleaned,
         )
@@ -28,7 +28,7 @@ class DoclingParser:
     @staticmethod
     def _trim_references_section(markdown_content: str) -> str:
         atx_heading = re.search(
-            r"(?im)^[ \t]{0,3}#{1,6}[ \t]+(?:references|bibliography|works[ \t]+cited)\b[^\n]*$",
+            r"(?im)^[ \t]{0,3}(?:#{1,6}[ \t]+)?(?:references|bibliography|works[ \t]+cited)[ \t]*$",
             markdown_content,
         )
         setext_heading = re.search(

@@ -3,6 +3,50 @@ from typing import Protocol
 from paperbrain.models import SummaryStats
 
 
+def _as_string_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        normalized = value.strip()
+        return [normalized] if normalized else []
+    if isinstance(value, list):
+        output: list[str] = []
+        for item in value:
+            normalized = str(item).strip()
+            if normalized:
+                output.append(normalized)
+        return output
+    return []
+
+
+def _topic_name(topic_card: dict) -> str:
+    for key in ("topic", "name", "title"):
+        value = str(topic_card.get(key, "")).strip()
+        if value:
+            return value
+    slug = str(topic_card.get("slug", "")).strip()
+    if slug.startswith("topics/"):
+        slug = slug.split("/", 1)[1]
+    return slug.replace("-", " ").strip()
+
+
+def _apply_person_focus_areas(person_cards: list[dict], topic_cards: list[dict]) -> None:
+    focus_areas_by_person: dict[str, list[str]] = {}
+    for topic_card in topic_cards:
+        topic_name = _topic_name(topic_card)
+        if not topic_name:
+            continue
+        for person_slug in _as_string_list(topic_card.get("related_people")):
+            focus_areas = focus_areas_by_person.setdefault(person_slug, [])
+            if topic_name not in focus_areas:
+                focus_areas.append(topic_name)
+
+    for person_card in person_cards:
+        person_slug = str(person_card.get("slug", "")).strip()
+        focus_areas = focus_areas_by_person.get(person_slug, [])
+        if not focus_areas:
+            raise ValueError(f"No linked topics found for person card: {person_slug or '(missing slug)'}")
+        person_card["focus_area"] = focus_areas
+
+
 class SummaryRepository(Protocol):
     def list_papers_for_summary(self, force_all: bool) -> list:
         ...
@@ -50,9 +94,11 @@ class SummarizeService:
             paper_cards.append(card)
 
         person_cards = self.llm.derive_person_cards(paper_cards)
-        self.repo.upsert_person_cards(person_cards, replace_existing=force_all)
-
         topic_cards = self.llm.derive_topic_cards(person_cards)
+
+        _apply_person_focus_areas(person_cards, topic_cards)
+
+        self.repo.upsert_person_cards(person_cards, replace_existing=force_all)
         self.repo.upsert_topic_cards(topic_cards, replace_existing=force_all)
 
         return SummaryStats(

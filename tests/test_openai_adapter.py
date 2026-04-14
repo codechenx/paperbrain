@@ -1,7 +1,10 @@
+import json
 from types import SimpleNamespace
 
+import pytest
+
 from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
-from paperbrain.adapters.llm import OpenAISummaryAdapter
+from paperbrain.adapters.llm import DeterministicLLMAdapter, OpenAISummaryAdapter
 from paperbrain.adapters.openai_client import OpenAIClient
 
 
@@ -45,6 +48,48 @@ class FakeOpenAIClient:
 
     def summarize(self, text: str, model: str) -> str:
         self.summary_calls.append({"text": text, "model": model})
+        if text.startswith("Generate person card JSON"):
+            title_match = next(
+                (
+                    line.split("title:", 1)[1].strip()
+                    for line in text.splitlines()
+                    if "title:" in line
+                ),
+                "Research question",
+            )
+            related = "papers/test-paper" if "papers/test-paper" in text else "papers/test"
+            return json.dumps(
+                {
+                    "focus_area": [],
+                    "big_questions": [
+                        {
+                            "question": title_match,
+                            "why_important": "(missing)",
+                            "related_papers": [related],
+                        }
+                    ],
+                }
+            )
+        if text.startswith("Generate topic card JSON"):
+            return json.dumps(
+                [
+                    {
+                        "slug": "topics/test-paper",
+                        "type": "topic",
+                        "topic": "test paper",
+                        "related_big_questions": [
+                            {
+                                "question": "Test Paper",
+                                "why_important": "(missing)",
+                                "related_papers": ["papers/test-paper"],
+                                "related_people": ["people/alice-example-org"],
+                            }
+                        ],
+                        "related_people": ["people/alice-example-org"],
+                        "related_papers": ["papers/test-paper"],
+                    }
+                ]
+            )
         return "generated summary"
 
 
@@ -71,6 +116,207 @@ def test_openai_embedding_adapter_uses_client_with_configured_model() -> None:
 
     assert vectors == [[0.5, 0.6]]
     assert client.embed_calls == [{"chunks": ["chunk 1"], "model": "text-embedding-3-small"}]
+
+
+def test_openai_summary_adapter_person_big_questions_from_linked_papers_via_llm() -> None:
+    class PersonLLMClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate person card JSON"):
+                return json.dumps(
+                    {
+                        "focus_area": [],
+                        "big_questions": [
+                            {
+                                "question": "How can microbiome stratification improve immunotherapy response?",
+                                "why_important": "Enables precision treatment selection.",
+                                "related_papers": ["papers/test-paper"],
+                            }
+                        ],
+                    }
+                )
+            return "{}"
+
+    client = PersonLLMClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    person_cards = adapter.derive_person_cards(
+        [
+            {
+                "slug": "papers/test-paper",
+                "title": "Test Paper",
+                "summary": "Key question solved: Q",
+                "corresponding_authors": ["Alice Example <alice@example.org>"],
+            }
+        ]
+    )
+
+    assert person_cards[0]["slug"] == "people/alice-example-org"
+    assert person_cards[0]["big_questions"][0]["question"] == (
+        "How can microbiome stratification improve immunotherapy response?"
+    )
+    assert person_cards[0]["focus_area"] == []
+    person_generation_calls = [
+        call for call in client.summary_calls if call["text"].startswith("Generate person card JSON")
+    ]
+    assert len(person_generation_calls) == 1
+    assert "papers/test-paper" in person_generation_calls[0]["text"]
+    assert "Test Paper" in person_generation_calls[0]["text"]
+
+
+def test_openai_summary_adapter_retries_person_generation_once_then_succeeds() -> None:
+    class RetryPersonClient(FakeOpenAIClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.person_attempts = 0
+
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate person card JSON"):
+                self.person_attempts += 1
+                if self.person_attempts == 1:
+                    return "{not-json"
+                return json.dumps(
+                    {
+                        "focus_area": [],
+                        "big_questions": [
+                            {
+                                "question": "How do we robustly validate signatures?",
+                                "why_important": "Avoids false biomarker claims.",
+                                "related_papers": ["papers/test-paper"],
+                            }
+                        ],
+                    }
+                )
+            return "{}"
+
+    client = RetryPersonClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    cards = adapter.derive_person_cards(
+        [{"slug": "papers/test-paper", "title": "T", "summary": "S", "corresponding_authors": ["a@b.org"]}]
+    )
+
+    assert cards[0]["big_questions"][0]["question"] == "How do we robustly validate signatures?"
+    assert client.person_attempts == 2
+
+
+def test_openai_summary_adapter_retries_when_person_focus_area_is_not_empty() -> None:
+    class RetryOnFocusAreaClient(FakeOpenAIClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.person_attempts = 0
+
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate person card JSON"):
+                self.person_attempts += 1
+                if self.person_attempts == 1:
+                    return json.dumps(
+                        {
+                            "focus_area": ["immunotherapy"],
+                            "big_questions": [
+                                {
+                                    "question": "How do we robustly validate signatures?",
+                                    "why_important": "Avoids false biomarker claims.",
+                                    "related_papers": ["papers/test-paper"],
+                                }
+                            ],
+                        }
+                    )
+                return json.dumps(
+                    {
+                        "focus_area": [],
+                        "big_questions": [
+                            {
+                                "question": "How do we robustly validate signatures?",
+                                "why_important": "Avoids false biomarker claims.",
+                                "related_papers": ["papers/test-paper"],
+                            }
+                        ],
+                    }
+                )
+            return "{}"
+
+    client = RetryOnFocusAreaClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    cards = adapter.derive_person_cards(
+        [{"slug": "papers/test-paper", "title": "T", "summary": "S", "corresponding_authors": ["a@b.org"]}]
+    )
+
+    assert cards[0]["big_questions"][0]["question"] == "How do we robustly validate signatures?"
+    assert cards[0]["focus_area"] == []
+    assert client.person_attempts == 2
+
+
+def test_openai_summary_adapter_raises_when_person_focus_area_is_not_empty_after_retries() -> None:
+    class NonEmptyFocusAreaClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate person card JSON"):
+                return json.dumps(
+                    {
+                        "focus_area": ["immunotherapy"],
+                        "big_questions": [
+                            {
+                                "question": "How do we robustly validate signatures?",
+                                "why_important": "Avoids false biomarker claims.",
+                                "related_papers": ["papers/test-paper"],
+                            }
+                        ],
+                    }
+                )
+            return "{}"
+
+    client = NonEmptyFocusAreaClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+
+    with pytest.raises(
+        ValueError,
+        match=r"person generation failed after 2 attempts.*focus_area must be present and equal to \[\]",
+    ):
+        adapter.derive_person_cards(
+            [{"slug": "papers/test-paper", "title": "T", "summary": "S", "corresponding_authors": ["a@b.org"]}]
+        )
+
+
+def test_openai_summary_adapter_raises_after_second_invalid_person_generation_attempt() -> None:
+    class AlwaysInvalidPersonClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate person card JSON"):
+                return '{"focus_area": [], "big_questions": []}'
+            return "{}"
+
+    client = AlwaysInvalidPersonClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+
+    with pytest.raises(ValueError, match=r"person generation failed after 2 attempts"):
+        adapter.derive_person_cards(
+            [{"slug": "papers/test-paper", "title": "T", "summary": "S", "corresponding_authors": ["a@b.org"]}]
+        )
+
+    assert len(
+        [call for call in client.summary_calls if call["text"].startswith("Generate person card JSON")]
+    ) == 2
+
+
+def test_openai_summary_adapter_person_generation_error_contains_person_slug_context() -> None:
+    class AlwaysInvalidPersonClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate person card JSON"):
+                return '{"focus_area": [], "big_questions": []}'
+            return "{}"
+
+    client = AlwaysInvalidPersonClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+
+    with pytest.raises(
+        ValueError,
+        match=r"person generation failed after 2 attempts.*people/a-b-org",
+    ):
+        adapter.derive_person_cards(
+            [{"slug": "papers/test-paper", "title": "T", "summary": "S", "corresponding_authors": ["a@b.org"]}]
+        )
 
 
 def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
@@ -103,9 +349,9 @@ def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
             "slug": "people/alice-example-org",
             "type": "person",
             "name": "alice",
-                "email": "alice@example.org",
-                "affiliation": "example.org",
-                "focus_area": ["test paper"],
+            "email": "alice@example.org",
+            "affiliation": "example.org",
+            "focus_area": [],
             "big_questions": [
                 {
                     "question": "Test Paper",
@@ -133,11 +379,13 @@ def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
             "related_papers": ["papers/test-paper"],
         }
     ]
-    assert len(client.summary_calls) == 2
+    assert len(client.summary_calls) == 4
     assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-page OCR/text")
     assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
     assert "logical flow of sections and experiments" in client.summary_calls[1]["text"]
     assert "bullet points for key results with figure references" in client.summary_calls[1]["text"]
+    assert client.summary_calls[2]["text"].startswith("Generate person card JSON")
+    assert client.summary_calls[3]["text"].startswith("Generate topic card JSON")
 
 
 def test_openai_summary_adapter_infers_corresponding_authors_from_first_page_text() -> None:
@@ -301,10 +549,41 @@ def test_openai_summary_adapter_normalizes_supplementary_figure_labels() -> None
     assert "Figure Figure S1" not in paper["summary"]
 
 
-def test_topic_derivation_is_deterministic_and_data_driven() -> None:
-    client = FakeOpenAIClient()
-    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+def test_openai_summary_adapter_generates_topics_from_all_person_big_questions_via_llm() -> None:
+    # Red-phase test.
+    class TopicLLMClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate topic card JSON"):
+                return json.dumps(
+                    [
+                        {
+                            "slug": "topics/gut-microbiome-and-lung-cancer-treatment",
+                            "type": "topic",
+                            "topic": "gut microbiome and lung cancer treatment",
+                            "related_big_questions": [
+                                {
+                                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                                    "why_important": "Could personalize treatment and improve outcomes.",
+                                    "related_papers": ["papers/a"],
+                                    "related_people": ["people/alice-example-org"],
+                                },
+                                {
+                                    "question": "How does lung microbiome composition affect lung infection severity?",
+                                    "why_important": "May enable earlier intervention for respiratory disease.",
+                                    "related_papers": ["papers/b"],
+                                    "related_people": ["people/bob-example-org"],
+                                },
+                            ],
+                            "related_people": ["people/alice-example-org", "people/bob-example-org"],
+                            "related_papers": ["papers/a", "papers/b"],
+                        }
+                    ]
+                )
+            return "{}"
 
+    client = TopicLLMClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
     person_cards = [
         {
             "slug": "people/alice-example-org",
@@ -336,44 +615,49 @@ def test_topic_derivation_is_deterministic_and_data_driven() -> None:
 
     topic_cards = adapter.derive_topic_cards(person_cards)
 
-    assert {card["slug"] for card in topic_cards} == {
-        "topics/gut-microbiome-and-lung-cancer-treatment",
-        "topics/lung-microbiome-and-lung-infection",
-    }
-    assert all(card["slug"] != "topics/research-synthesis" for card in topic_cards)
-    cancer_microbiome_card = next(
-        card for card in topic_cards if card["slug"] == "topics/gut-microbiome-and-lung-cancer-treatment"
-    )
-    lung_infection_card = next(card for card in topic_cards if card["slug"] == "topics/lung-microbiome-and-lung-infection")
-    assert cancer_microbiome_card["topic"] == "gut microbiome and lung cancer treatment"
-    assert cancer_microbiome_card["related_people"] == ["people/alice-example-org"]
-    assert cancer_microbiome_card["related_papers"] == ["papers/a"]
-    assert cancer_microbiome_card["related_big_questions"] == [
-        {
-            "question": "How can gut microbiome signals improve lung cancer treatment response?",
-            "why_important": "Could personalize treatment and improve outcomes.",
-            "related_papers": ["papers/a"],
-            "related_people": ["people/alice-example-org"],
-        }
+    topic_generation_calls = [
+        call for call in client.summary_calls if call["text"].startswith("Generate topic card JSON")
     ]
-    assert lung_infection_card["topic"] == "lung microbiome and lung infection"
-    assert lung_infection_card["related_people"] == ["people/bob-example-org"]
-    assert lung_infection_card["related_papers"] == ["papers/b"]
-    assert lung_infection_card["related_big_questions"] == [
+    assert len(topic_generation_calls) == 1
+    assert "people/alice-example-org" in topic_generation_calls[0]["text"]
+    assert "people/bob-example-org" in topic_generation_calls[0]["text"]
+    assert "How can gut microbiome signals improve lung cancer treatment response?" in topic_generation_calls[0]["text"]
+    assert "How does lung microbiome composition affect lung infection severity?" in topic_generation_calls[0]["text"]
+    assert topic_cards == [
         {
-            "question": "How does lung microbiome composition affect lung infection severity?",
-            "why_important": "May enable earlier intervention for respiratory disease.",
-            "related_papers": ["papers/b"],
-            "related_people": ["people/bob-example-org"],
+            "slug": "topics/gut-microbiome-and-lung-cancer-treatment",
+            "type": "topic",
+            "topic": "gut microbiome and lung cancer treatment",
+            "related_big_questions": [
+                {
+                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/a"],
+                    "related_people": ["people/alice-example-org"],
+                },
+                {
+                    "question": "How does lung microbiome composition affect lung infection severity?",
+                    "why_important": "May enable earlier intervention for respiratory disease.",
+                    "related_papers": ["papers/b"],
+                    "related_people": ["people/bob-example-org"],
+                },
+            ],
+            "related_people": ["people/alice-example-org", "people/bob-example-org"],
+            "related_papers": ["papers/a", "papers/b"],
         }
     ]
 
 
-def test_topic_derivation_merges_duplicate_big_questions_across_people() -> None:
-    client = FakeOpenAIClient()
+def test_openai_summary_adapter_rejects_empty_topic_payload_array() -> None:
+    class EmptyTopicArrayClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate topic card JSON"):
+                return "[]"
+            return "{}"
+
+    client = EmptyTopicArrayClient()
     adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
-
-    shared_question = "How can gut microbiome signals improve lung cancer treatment response?"
     person_cards = [
         {
             "slug": "people/alice-example-org",
@@ -381,7 +665,154 @@ def test_topic_derivation_merges_duplicate_big_questions_across_people() -> None
             "focus_area": [],
             "big_questions": [
                 {
-                    "question": shared_question,
+                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/a"],
+                }
+            ],
+            "related_papers": ["papers/a"],
+        }
+    ]
+
+    with pytest.raises(ValueError, match=r"topic generation failed after 2 attempts: empty topic payload"):
+        adapter.derive_topic_cards(person_cards)
+
+
+def test_openai_summary_adapter_rejects_topic_with_empty_top_level_related_lists() -> None:
+    class EmptyTopLevelRelationsClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate topic card JSON"):
+                return json.dumps(
+                    [
+                        {
+                            "slug": "topics/gut-microbiome-and-lung-cancer-treatment",
+                            "type": "topic",
+                            "topic": "gut microbiome and lung cancer treatment",
+                            "related_big_questions": [
+                                {
+                                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                                    "why_important": "Could personalize treatment and improve outcomes.",
+                                    "related_papers": ["papers/a"],
+                                    "related_people": ["people/alice-example-org"],
+                                }
+                            ],
+                            "related_people": [],
+                            "related_papers": [],
+                        }
+                    ]
+                )
+            return "{}"
+
+    client = EmptyTopLevelRelationsClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    person_cards = [
+        {
+            "slug": "people/alice-example-org",
+            "type": "person",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/a"],
+                }
+            ],
+            "related_papers": ["papers/a"],
+        }
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match=r"topic generation failed after 2 attempts: topic entry must have non-empty related_people and related_papers",
+    ):
+        adapter.derive_topic_cards(person_cards)
+
+
+def test_openai_summary_adapter_retries_topic_generation_once_then_raises() -> None:
+    # Red-phase test.
+    class RetryTopicClient(FakeOpenAIClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.topic_attempts = 0
+
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate topic card JSON"):
+                self.topic_attempts += 1
+                return json.dumps(
+                    [
+                        {
+                            "slug": "topics/x",
+                            "type": "topic",
+                            "topic": "x",
+                            "related_big_questions": [],
+                        }
+                    ]
+                )
+            return "{}"
+
+    client = RetryTopicClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+
+    with pytest.raises(ValueError, match=r"topic generation failed after 2 attempts"):
+        adapter.derive_topic_cards(
+            [
+                {
+                    "slug": "people/alice-example-org",
+                    "type": "person",
+                    "focus_area": [],
+                    "big_questions": [
+                        {
+                            "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                            "why_important": "Could personalize treatment and improve outcomes.",
+                            "related_papers": ["papers/a"],
+                        }
+                    ],
+                    "related_papers": ["papers/a"],
+                }
+            ]
+        )
+
+    assert client.topic_attempts == 2
+
+
+def test_openai_summary_adapter_allows_topic_question_with_provenance_consistent_non_cartesian_association() -> None:
+    class NonCartesianAssociationClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate topic card JSON"):
+                return json.dumps(
+                    [
+                        {
+                            "slug": "topics/microbiome-and-treatment-response",
+                            "type": "topic",
+                            "topic": "microbiome and treatment response",
+                            "related_big_questions": [
+                                {
+                                    "question": "How can microbiome signals improve treatment response?",
+                                    "why_important": "Could personalize treatment and improve outcomes.",
+                                    "related_papers": ["papers/a", "papers/b"],
+                                    "related_people": ["people/alice-example-org", "people/bob-example-org"],
+                                }
+                            ],
+                            "related_people": ["people/alice-example-org", "people/bob-example-org"],
+                            "related_papers": ["papers/a", "papers/b"],
+                        }
+                    ]
+                )
+            return "{}"
+
+    client = NonCartesianAssociationClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    person_cards = [
+        {
+            "slug": "people/alice-example-org",
+            "type": "person",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": "How can microbiome signals improve treatment response?",
                     "why_important": "Could personalize treatment and improve outcomes.",
                     "related_papers": ["papers/a"],
                 }
@@ -394,7 +825,7 @@ def test_topic_derivation_merges_duplicate_big_questions_across_people() -> None
             "focus_area": [],
             "big_questions": [
                 {
-                    "question": shared_question,
+                    "question": "How can microbiome signals improve treatment response?",
                     "why_important": "Could personalize treatment and improve outcomes.",
                     "related_papers": ["papers/b"],
                 }
@@ -403,16 +834,106 @@ def test_topic_derivation_merges_duplicate_big_questions_across_people() -> None
         },
     ]
 
-    topic_cards = adapter.derive_topic_cards(person_cards)
-    assert len(topic_cards) == 1
-    assert topic_cards[0]["slug"] == "topics/gut-microbiome-and-lung-cancer-treatment"
-    assert topic_cards[0]["related_people"] == ["people/alice-example-org", "people/bob-example-org"]
-    assert topic_cards[0]["related_papers"] == ["papers/a", "papers/b"]
-    assert topic_cards[0]["related_big_questions"] == [
+    assert adapter.derive_topic_cards(person_cards) == [
         {
-            "question": shared_question,
-            "why_important": "Could personalize treatment and improve outcomes.",
-            "related_papers": ["papers/a", "papers/b"],
+            "slug": "topics/microbiome-and-treatment-response",
+            "type": "topic",
+            "topic": "microbiome and treatment response",
+            "related_big_questions": [
+                {
+                    "question": "How can microbiome signals improve treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/a", "papers/b"],
+                    "related_people": ["people/alice-example-org", "people/bob-example-org"],
+                }
+            ],
             "related_people": ["people/alice-example-org", "people/bob-example-org"],
+            "related_papers": ["papers/a", "papers/b"],
         }
     ]
+
+
+def test_openai_summary_adapter_rejects_topic_question_with_mismatched_person_paper_association() -> None:
+    class MismatchedQuestionAssociationClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate topic card JSON"):
+                return json.dumps(
+                    [
+                        {
+                            "slug": "topics/microbiome-and-treatment-response",
+                            "type": "topic",
+                            "topic": "microbiome and treatment response",
+                            "related_big_questions": [
+                                {
+                                    "question": "How can microbiome signals improve treatment response?",
+                                    "why_important": "Could personalize treatment and improve outcomes.",
+                                    "related_papers": ["papers/b"],
+                                    "related_people": ["people/alice-example-org"],
+                                }
+                            ],
+                            "related_people": ["people/alice-example-org"],
+                            "related_papers": ["papers/b"],
+                        }
+                    ]
+                )
+            return "{}"
+
+    client = MismatchedQuestionAssociationClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    person_cards = [
+        {
+            "slug": "people/alice-example-org",
+            "type": "person",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": "How can microbiome signals improve treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/a"],
+                }
+            ],
+            "related_papers": ["papers/a"],
+        },
+        {
+            "slug": "people/bob-example-org",
+            "type": "person",
+            "focus_area": [],
+            "big_questions": [
+                {
+                    "question": "How can microbiome signals improve treatment response?",
+                    "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/b"],
+                }
+            ],
+            "related_papers": ["papers/b"],
+        },
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match=r"topic generation failed after 2 attempts: related_big_questions person/paper associations must match source big-question links",
+    ):
+        adapter.derive_topic_cards(person_cards)
+
+def test_deterministic_adapter_person_cards_include_focus_and_big_questions_contract() -> None:
+    adapter = DeterministicLLMAdapter()
+
+    person_cards = adapter.derive_person_cards(
+        [
+            {
+                "slug": "papers/test-paper",
+                "title": "Test Paper",
+                "summary": "Key question solved: How does this method work?",
+                "corresponding_authors": ["Alice Example <alice@example.org>"],
+            }
+        ]
+    )
+
+    assert person_cards[0]["slug"] == "people/alice-example-org"
+    assert person_cards[0]["focus_area"]
+    assert all(isinstance(area, str) and area.strip() for area in person_cards[0]["focus_area"])
+    assert person_cards[0]["big_questions"]
+    assert person_cards[0]["big_questions"][0]["question"].strip()
+    assert person_cards[0]["big_questions"][0]["why_important"].strip()
+    assert person_cards[0]["big_questions"][0]["related_papers"] == ["papers/test-paper"]

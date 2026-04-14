@@ -1,4 +1,7 @@
+import json
 from types import SimpleNamespace
+
+import pytest
 
 from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
 from paperbrain.adapters.llm import OpenAISummaryAdapter
@@ -71,6 +74,101 @@ def test_openai_embedding_adapter_uses_client_with_configured_model() -> None:
 
     assert vectors == [[0.5, 0.6]]
     assert client.embed_calls == [{"chunks": ["chunk 1"], "model": "text-embedding-3-small"}]
+
+
+def test_openai_summary_adapter_person_generation_via_llm_from_linked_papers() -> None:
+    class PersonLLMClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate person card JSON"):
+                return json.dumps(
+                    {
+                        "focus_area": [],
+                        "big_questions": [
+                            {
+                                "question": "How can microbiome stratification improve immunotherapy response?",
+                                "why_important": "Enables precision treatment selection.",
+                                "related_papers": ["papers/test-paper"],
+                            }
+                        ],
+                    }
+                )
+            return "{}"
+
+    client = PersonLLMClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    person_cards = adapter.derive_person_cards(
+        [
+            {
+                "slug": "papers/test-paper",
+                "title": "Test Paper",
+                "summary": "Key question solved: Q",
+                "corresponding_authors": ["Alice Example <alice@example.org>"],
+            }
+        ]
+    )
+
+    assert person_cards[0]["slug"] == "people/alice-example-org"
+    assert person_cards[0]["big_questions"][0]["question"] == (
+        "How can microbiome stratification improve immunotherapy response?"
+    )
+    assert person_cards[0]["focus_area"] == []
+    assert any(call["text"].startswith("Generate person card JSON") for call in client.summary_calls)
+    assert "papers/test-paper" in client.summary_calls[0]["text"]
+    assert "Test Paper" in client.summary_calls[0]["text"]
+
+
+def test_openai_summary_adapter_retries_person_generation_once_then_succeeds() -> None:
+    class RetryPersonClient(FakeOpenAIClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.person_attempts = 0
+
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate person card JSON"):
+                self.person_attempts += 1
+                if self.person_attempts == 1:
+                    return "{not-json"
+                return json.dumps(
+                    {
+                        "focus_area": [],
+                        "big_questions": [
+                            {
+                                "question": "How do we robustly validate signatures?",
+                                "why_important": "Avoids false biomarker claims.",
+                                "related_papers": ["papers/test-paper"],
+                            }
+                        ],
+                    }
+                )
+            return "{}"
+
+    client = RetryPersonClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    cards = adapter.derive_person_cards(
+        [{"slug": "papers/test-paper", "title": "T", "summary": "S", "corresponding_authors": ["a@b.org"]}]
+    )
+
+    assert cards[0]["big_questions"][0]["question"] == "How do we robustly validate signatures?"
+    assert client.person_attempts == 2
+
+
+def test_openai_summary_adapter_raises_after_second_invalid_person_generation_attempt() -> None:
+    class AlwaysInvalidPersonClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate person card JSON"):
+                return '{"focus_area": [], "big_questions": []}'
+            return "{}"
+
+    client = AlwaysInvalidPersonClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+
+    with pytest.raises(ValueError, match=r"person generation failed after 2 attempts"):
+        adapter.derive_person_cards(
+            [{"slug": "papers/test-paper", "title": "T", "summary": "S", "corresponding_authors": ["a@b.org"]}]
+        )
 
 
 def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:

@@ -242,7 +242,7 @@ Legend: Blue bars indicate controls.
     parsed = DoclingParser().parse_pdf(pdf_path)
 
     assert "![Figure 1 embed]" not in parsed.full_text
-    assert '<img src="data:image/png;base64' not in parsed.full_text
+    assert "<img" not in parsed.full_text
     assert "data:image/png;base64" not in parsed.full_text
     assert "data:image/jpeg;base64" not in parsed.full_text
     assert "Figure 1. p53 staining intensity in treated cells." in parsed.full_text

@@ -113,9 +113,12 @@ def test_openai_summary_adapter_person_generation_via_llm_from_linked_papers() -
         "How can microbiome stratification improve immunotherapy response?"
     )
     assert person_cards[0]["focus_area"] == []
-    assert any(call["text"].startswith("Generate person card JSON") for call in client.summary_calls)
-    assert "papers/test-paper" in client.summary_calls[0]["text"]
-    assert "Test Paper" in client.summary_calls[0]["text"]
+    person_generation_calls = [
+        call for call in client.summary_calls if call["text"].startswith("Generate person card JSON")
+    ]
+    assert len(person_generation_calls) == 1
+    assert "papers/test-paper" in person_generation_calls[0]["text"]
+    assert "Test Paper" in person_generation_calls[0]["text"]
 
 
 def test_openai_summary_adapter_retries_person_generation_once_then_succeeds() -> None:
@@ -169,6 +172,10 @@ def test_openai_summary_adapter_raises_after_second_invalid_person_generation_at
         adapter.derive_person_cards(
             [{"slug": "papers/test-paper", "title": "T", "summary": "S", "corresponding_authors": ["a@b.org"]}]
         )
+
+    assert len(
+        [call for call in client.summary_calls if call["text"].startswith("Generate person card JSON")]
+    ) == 2
 
 
 def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:

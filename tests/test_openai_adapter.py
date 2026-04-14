@@ -101,6 +101,13 @@ def test_llm_module_no_longer_exposes_legacy_heuristic_symbols() -> None:
     assert not hasattr(llm_module, "DeterministicLLMAdapter")
 
 
+def test_openai_summary_adapter_no_longer_defines_removed_metadata_heuristics() -> None:
+    assert not hasattr(OpenAISummaryAdapter, "_extract_year")
+    assert not hasattr(OpenAISummaryAdapter, "_extract_journal")
+    assert not hasattr(OpenAISummaryAdapter, "_extract_authors")
+    assert not hasattr(OpenAISummaryAdapter, "_infer_corresponding_authors")
+
+
 def test_openai_client_calls_embedding_and_summary() -> None:
     sdk_client = FakeSDKClient()
     client = OpenAIClient(api_key="test-key", sdk_client=sdk_client)
@@ -554,6 +561,33 @@ def test_openai_summary_adapter_uses_defaults_without_heuristic_metadata_fallbac
     assert card["journal"] == "Unknown"
     assert card["year"] == 0
     assert card["corresponding_authors"] == []
+
+
+@pytest.mark.parametrize("inferred_title", [None, 123, {"title": "unexpected"}])
+def test_openai_summary_adapter_falls_back_to_seed_title_when_inferred_title_not_string(inferred_title: object) -> None:
+    class InvalidTitleMetadataClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Extract bibliographic metadata from the first-two-pages OCR/text"):
+                return json.dumps(
+                    {
+                        "title": inferred_title,
+                        "authors": [],
+                        "journal": "",
+                        "year": 0,
+                        "corresponding_authors": [],
+                    }
+                )
+            return "generated summary"
+
+    client = InvalidTitleMetadataClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    card = adapter.summarize_paper(
+        "paper text",
+        {"slug": "papers/test-paper", "title": "Seed Title", "corresponding_authors": []},
+    )
+
+    assert card["title"] == "Seed Title"
 
 
 def test_openai_summary_adapter_does_not_infer_corresponding_authors_from_paper_text() -> None:

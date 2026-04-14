@@ -84,52 +84,6 @@ class OpenAISummaryAdapter:
         self.model = model
 
     @staticmethod
-    def _extract_corresponding_authors_from_text(text: str) -> list[str]:
-        email_pattern = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
-        candidates: list[str] = []
-        seen: set[str] = set()
-        for line in text.splitlines():
-            lowered = line.casefold()
-            if "correspond" not in lowered and "e-mail" not in lowered and "email" not in lowered:
-                continue
-            for email in email_pattern.findall(line):
-                normalized = email.strip().lower()
-                if normalized and normalized not in seen:
-                    seen.add(normalized)
-                    candidates.append(normalized)
-        if candidates:
-            return candidates
-
-        # Fallback: when corresponding labels are absent, use first-page emails.
-        for email in email_pattern.findall(text):
-            normalized = email.strip().lower()
-            if normalized and normalized not in seen:
-                seen.add(normalized)
-                candidates.append(normalized)
-        return candidates
-
-    @staticmethod
-    def _parse_authors_response(raw: str) -> list[str]:
-        value = raw.strip()
-        if not value:
-            return []
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            parsed = None
-        if isinstance(parsed, list):
-            output: list[str] = []
-            seen: set[str] = set()
-            for item in parsed:
-                normalized = str(item).strip().lower()
-                if normalized and normalized not in seen:
-                    seen.add(normalized)
-                    output.append(normalized)
-            if output:
-                return output
-        return OpenAISummaryAdapter._extract_corresponding_authors_from_text(value)
-
-    @staticmethod
     def _as_string_list(value: object) -> list[str]:
         if isinstance(value, list):
             return [str(item).strip() for item in value if str(item).strip()]
@@ -159,45 +113,6 @@ class OpenAISummaryAdapter:
             return {}
 
     @staticmethod
-    def _extract_year(text: str) -> int:
-        years = [int(value) for value in re.findall(r"\b(19[5-9]\d|20\d{2})\b", text)]
-        return max(years) if years else 0
-
-    @staticmethod
-    def _extract_journal(text: str) -> str:
-        for line in text.splitlines():
-            normalized = " ".join(line.strip().split())
-            if not normalized:
-                continue
-            if re.search(r"(journal|nature|science|cell|proceedings|review|communications|letters)", normalized, flags=re.IGNORECASE):
-                return normalized
-        return ""
-
-    @staticmethod
-    def _extract_authors(text: str) -> list[str]:
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        name_pattern = re.compile(r"[A-Z][a-zA-Z'`\-]+(?:\s+[A-Z](?:\.)?)?(?:\s+[A-Z][a-zA-Z'`\-]+)+")
-        for line in lines[:20]:
-            candidate = re.sub(r"\b\d+\b", " ", line)
-            candidate = " ".join(candidate.split())
-            if len(candidate) < 8 or len(candidate) > 240:
-                continue
-            if "@" in candidate or "http" in candidate.casefold():
-                continue
-            names = [name.strip() for name in name_pattern.findall(candidate)]
-            deduped: list[str] = []
-            seen: set[str] = set()
-            for name in names:
-                key = name.casefold()
-                if key in seen:
-                    continue
-                seen.add(key)
-                deduped.append(name)
-            if len(deduped) >= 2:
-                return deduped
-        return []
-
-    @staticmethod
     def _coerce_year(value: object) -> int:
         if isinstance(value, int):
             return value if value > 0 else 0
@@ -205,7 +120,8 @@ class OpenAISummaryAdapter:
             year = int(value)
             return year if year > 0 else 0
         if isinstance(value, str):
-            return OpenAISummaryAdapter._extract_year(value)
+            years = [int(match) for match in re.findall(r"\b(19[5-9]\d|20\d{2})\b", value)]
+            return max(years) if years else 0
         return 0
 
     @staticmethod
@@ -225,7 +141,9 @@ class OpenAISummaryAdapter:
 
     @staticmethod
     def _normalize_title(value: object) -> str:
-        return " ".join(str(value).split())
+        if not isinstance(value, str):
+            return ""
+        return " ".join(value.split())
 
     @staticmethod
     def _normalize_figure_label(value: str) -> str:
@@ -784,28 +702,6 @@ class OpenAISummaryAdapter:
         person_slug = str(person_seed.get("slug", "")).strip() or "(unknown person)"
         detail = f": {last_error}" if last_error else ""
         raise ValueError(f"person generation failed after 2 attempts for {person_slug}{detail}")
-
-    def _infer_corresponding_authors(self, paper_text: str, title: str) -> list[str]:
-        first_page_text = paper_text[:4000]
-        extracted = self._extract_corresponding_authors_from_text(first_page_text)
-        if extracted:
-            return extracted
-        prompt = (
-            "Extract corresponding author email addresses from the first-page OCR/text below.\n"
-            "Role: You are an extraction assistant for author contact metadata.\n"
-            "Objective: Extract corresponding author email addresses from first-page OCR/text.\n"
-            "Evidence boundary: Use only the provided first-page text.\n"
-            "Rubric/checklist:\n"
-            "- Return only valid email addresses present in the text.\n"
-            "- Exclude invalid or partial addresses.\n"
-            "- Prefer corresponding-author/contact emails when identifiable.\n"
-            "Output contract: Return strict JSON array only, no prose.\n"
-            "Defaults/failure policy: If no valid email is found, return [].\n\n"
-            f"Title: {title}\n\n"
-            f"{first_page_text}"
-        )
-        raw = self.client.summarize(prompt, model=self.model)
-        return self._parse_authors_response(raw)
 
     def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
         seed_title = self._normalize_title(metadata.get("title", ""))

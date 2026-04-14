@@ -384,7 +384,55 @@ def test_openai_summary_adapter_person_generation_error_contains_person_slug_con
 
 
 def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
-    client = FakeOpenAIClient()
+    class MetadataPersonTopicClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Extract bibliographic metadata from the first-two-pages OCR/text"):
+                return json.dumps(
+                    {
+                        "title": "Test Paper",
+                        "authors": [],
+                        "journal": "",
+                        "year": 0,
+                        "corresponding_authors": ["Alice Example <alice@example.org>"],
+                    }
+                )
+            if text.startswith("Generate person card JSON"):
+                return json.dumps(
+                    {
+                        "focus_area": [],
+                        "big_questions": [
+                            {
+                                "question": "Test Paper",
+                                "why_important": "(missing)",
+                                "related_papers": ["papers/test-paper"],
+                            }
+                        ],
+                    }
+                )
+            if text.startswith("Generate topic card JSON"):
+                return json.dumps(
+                    [
+                        {
+                            "slug": "topics/test-paper",
+                            "type": "topic",
+                            "topic": "test paper",
+                            "related_big_questions": [
+                                {
+                                    "question": "Test Paper",
+                                    "why_important": "(missing)",
+                                    "related_papers": ["papers/test-paper"],
+                                    "related_people": ["people/alice-example-org"],
+                                }
+                            ],
+                            "related_people": ["people/alice-example-org"],
+                            "related_papers": ["papers/test-paper"],
+                        }
+                    ]
+                )
+            return "generated summary"
+
+    client = MetadataPersonTopicClient()
     adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
     paper_text = "x" * 9000
 
@@ -444,7 +492,7 @@ def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
         }
     ]
     assert len(client.summary_calls) == 4
-    assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-page OCR/text")
+    assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-two-pages OCR/text")
     assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
     assert "logical flow of sections and experiments" in client.summary_calls[1]["text"]
     assert "bullet points for key results with figure references" in client.summary_calls[1]["text"]
@@ -508,8 +556,23 @@ def test_openai_summary_adapter_uses_defaults_without_heuristic_metadata_fallbac
     assert card["corresponding_authors"] == []
 
 
-def test_openai_summary_adapter_infers_corresponding_authors_from_first_page_text() -> None:
-    client = FakeOpenAIClient()
+def test_openai_summary_adapter_does_not_infer_corresponding_authors_from_paper_text() -> None:
+    class NoFallbackMetadataClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Extract bibliographic metadata from the first-two-pages OCR/text"):
+                return json.dumps(
+                    {
+                        "title": "Test Paper",
+                        "authors": [],
+                        "journal": "",
+                        "year": 0,
+                        "corresponding_authors": [],
+                    }
+                )
+            return "generated summary"
+
+    client = NoFallbackMetadataClient()
     adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
     first_page = "Corresponding author: Alice Research alice@university.org"
     paper_text = first_page + "\n" + ("x" * 9000)
@@ -523,27 +586,30 @@ def test_openai_summary_adapter_infers_corresponding_authors_from_first_page_tex
         },
     )
 
-    assert paper_card["corresponding_authors"] == ["alice@university.org"]
+    assert paper_card["corresponding_authors"] == []
     assert len(client.summary_calls) == 2
     prompt = client.summary_calls[0]["text"]
-    assert prompt.startswith("Extract bibliographic metadata from the first-page OCR/text")
+    assert prompt.startswith("Extract bibliographic metadata from the first-two-pages OCR/text")
     assert "Role: You are a precise scientific metadata extraction assistant." in prompt
-    assert "Objective: Extract bibliographic metadata from first-page OCR text." in prompt
-    assert "Evidence boundary: Use only the text provided below; do not use outside knowledge." in prompt
-    assert "Output contract: Return strict JSON object only with keys authors (array of strings), journal (string), year (integer)." in prompt
-    assert "Defaults/failure policy: If unknown, use authors=[], journal=\"\", year=0." in prompt
+    assert "Objective: Extract bibliographic metadata from first-two-pages OCR/text." in prompt
+    assert (
+        "Output contract: Return strict JSON object only with keys title (string), authors (array of strings), "
+        "journal (string), year (integer), corresponding_authors (array of strings)." in prompt
+    )
     assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
 
 
-def test_openai_summary_adapter_uses_openai_fallback_for_missing_corresponding_authors() -> None:
-    class FallbackClient(FakeOpenAIClient):
+def test_openai_summary_adapter_does_not_call_corresponding_author_fallback() -> None:
+    class NoFallbackCallClient(FakeOpenAIClient):
         def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
             self.summary_calls.append({"text": text, "model": model})
             if text.startswith("Extract corresponding author email addresses"):
                 return '["bob@lab.org"]'
+            if text.startswith("Extract bibliographic metadata from the first-two-pages OCR/text"):
+                return '{"title":"Test Paper","authors":[],"journal":"","year":0,"corresponding_authors":[]}'
             return "generated summary"
 
-    client = FallbackClient()
+    client = NoFallbackCallClient()
     adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
     paper_text = "No email on first page\n" + ("x" * 9000)
 
@@ -556,15 +622,11 @@ def test_openai_summary_adapter_uses_openai_fallback_for_missing_corresponding_a
         },
     )
 
-    assert paper_card["corresponding_authors"] == ["bob@lab.org"]
-    assert len(client.summary_calls) == 3
-    assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-page OCR/text")
+    assert paper_card["corresponding_authors"] == []
+    assert len(client.summary_calls) == 2
+    assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-two-pages OCR/text")
     assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
-    fallback_prompt = client.summary_calls[2]["text"]
-    assert fallback_prompt.startswith("Extract corresponding author email addresses")
-    assert "Role: You are an extraction assistant for author contact metadata." in fallback_prompt
-    assert "Output contract: Return strict JSON array only, no prose." in fallback_prompt
-    assert "Evidence boundary: Use only the provided first-page text." in fallback_prompt
+    assert not any(call["text"].startswith("Extract corresponding author email addresses") for call in client.summary_calls)
 
 
 def test_openai_summary_adapter_formats_logical_flow_list_as_numbered_markdown() -> None:

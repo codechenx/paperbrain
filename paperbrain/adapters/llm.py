@@ -224,6 +224,10 @@ class OpenAISummaryAdapter:
         return output
 
     @staticmethod
+    def _normalize_title(value: object) -> str:
+        return " ".join(str(value).split())
+
+    @staticmethod
     def _normalize_figure_label(value: str) -> str:
         normalized = value.strip()
         if not normalized:
@@ -316,28 +320,32 @@ class OpenAISummaryAdapter:
                 break
         return results
 
-    def _infer_bibliographic_fields(self, *, title: str, first_page_text: str) -> dict:
+    def _infer_bibliographic_fields(self, *, title: str, first_two_pages_text: str) -> dict:
         prompt = (
-            "Extract bibliographic metadata from the first-page OCR/text.\n"
+            "Extract bibliographic metadata from the first-two-pages OCR/text\n"
             "Role: You are a precise scientific metadata extraction assistant.\n"
-            "Objective: Extract bibliographic metadata from first-page OCR text.\n"
-            "Evidence boundary: Use only the text provided below; do not use outside knowledge.\n"
+            "Objective: Extract bibliographic metadata from first-two-pages OCR/text.\n"
+            "Evidence boundary: Use only the provided first-two-pages text.\n"
             "Rubric/checklist:\n"
+            "- Title must match the paper title present in the provided text.\n"
             "- Authors must be actual author names found in the provided page text.\n"
             "- Journal must be the publication venue stated in the text.\n"
             "- Year must be the publication year as an integer.\n"
-            "Output contract: Return strict JSON object only with keys authors (array of strings), "
-            "journal (string), year (integer).\n"
-            "Defaults/failure policy: If unknown, use authors=[], journal=\"\", year=0.\n\n"
-            f"Title: {title}\n\n"
-            f"{first_page_text[:5000]}"
+            "- Corresponding authors must be email addresses or identifiers explicitly present in the provided text.\n"
+            "Output contract: Return strict JSON object only with keys title (string), authors (array of strings), "
+            "journal (string), year (integer), corresponding_authors (array of strings).\n"
+            "Defaults/failure policy: If unknown, use title=\"\", authors=[], journal=\"\", year=0, corresponding_authors=[].\n\n"
+            f"Seed title: {title}\n\n"
+            f"{first_two_pages_text[:8000]}"
         )
         raw = self.client.summarize(prompt, model=self.model)
         parsed = self._extract_json_object(raw)
         return {
+            "title": self._normalize_title(parsed.get("title", "")),
             "authors": self._as_string_list(parsed.get("authors")),
             "journal": str(parsed.get("journal", "")).strip(),
             "year": self._coerce_year(parsed.get("year")),
+            "corresponding_authors": self._as_string_list(parsed.get("corresponding_authors")),
         }
 
     def _build_summary(self, *, title: str, paper_type: str, paper_text: str) -> tuple[str, str]:
@@ -800,37 +808,21 @@ class OpenAISummaryAdapter:
         return self._parse_authors_response(raw)
 
     def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
-        title = metadata.get("title", "Untitled")
+        seed_title = self._normalize_title(metadata.get("title", ""))
         paper_type = str(metadata.get("paper_type", "article")).strip().lower()
         if paper_type not in {"article", "review"}:
-            paper_type = "review" if "review" in title.casefold() else "article"
-        first_page_text = str(metadata.get("first_page_text", "")).strip() or paper_text[:4000]
+            paper_type = "review" if "review" in seed_title.casefold() else "article"
 
-        authors = self._as_string_list(metadata.get("authors"))
-        journal = str(metadata.get("journal", "")).strip()
-        year = self._coerce_year(metadata.get("year"))
-
-        if not authors:
-            authors = self._extract_authors(first_page_text)
-        if not journal:
-            journal = self._extract_journal(first_page_text)
-        if not year:
-            year = self._extract_year(first_page_text)
-
-        if not authors or not journal or not year:
-            inferred = self._infer_bibliographic_fields(title=title, first_page_text=first_page_text)
-            if not authors:
-                authors = inferred["authors"]
-            if not journal:
-                journal = inferred["journal"]
-            if not year:
-                year = inferred["year"]
+        inferred = self._infer_bibliographic_fields(title=seed_title, first_two_pages_text=paper_text[:8000])
+        title = self._normalize_title(inferred.get("title")) or seed_title or "Untitled"
+        authors = self._as_string_list(inferred.get("authors")) or []
+        journal = str(inferred.get("journal", "")).strip() or "Unknown"
+        year = self._coerce_year(inferred.get("year"))
+        corresponding_authors = self._merge_unique(
+            [normalize_email(author) or str(author).strip() for author in self._as_string_list(inferred.get("corresponding_authors"))]
+        )
 
         summary, paper_type = self._build_summary(title=title, paper_type=paper_type, paper_text=paper_text)
-        corresponding_authors = list(metadata.get("corresponding_authors", []))
-        if not corresponding_authors:
-            corresponding_authors = self._infer_corresponding_authors(paper_text, title)
-        corresponding_authors = self._merge_unique([normalize_email(author) or str(author).strip() for author in corresponding_authors])
 
         return {
             "slug": metadata["slug"],
@@ -838,7 +830,7 @@ class OpenAISummaryAdapter:
             "paper_type": paper_type,
             "title": title,
             "authors": authors,
-            "journal": journal or "Unknown",
+            "journal": journal,
             "year": year,
             "summary": summary,
             "corresponding_authors": corresponding_authors,

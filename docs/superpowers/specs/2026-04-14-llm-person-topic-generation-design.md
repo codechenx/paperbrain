@@ -7,7 +7,7 @@ PaperBrain currently derives person/topic card content with heuristic parsing an
 1. Build person identities and paper links from paper cards.
 2. Generate person `focus_area` and `big_questions` from linked papers using LLM.
 3. Generate topic cards using LLM from all person-card big questions.
-4. Fail summarize with a clear error when LLM output is malformed or incomplete.
+4. Retry once when LLM output is malformed or incomplete; if retry still fails, fail summarize with a clear error.
 
 This design removes heuristic content synthesis for person/topic card generation while preserving deterministic identity/link integrity.
 
@@ -114,8 +114,8 @@ Validation rules:
 
 ## Error handling
 
-1. If person-stage LLM output is malformed/invalid, stop summarize and raise a clear validation error.
-2. If topic-stage LLM output is malformed/invalid, stop summarize and raise a clear validation error.
+1. If person-stage LLM output is malformed/invalid, retry the same stage once. If the retry is still invalid, stop summarize and raise a clear validation error.
+2. If topic-stage LLM output is malformed/invalid, retry the same stage once. If the retry is still invalid, stop summarize and raise a clear validation error.
 3. No regex/theme fallback content generation for person/topic cards.
 4. Deterministic normalization (slug cleanup, dedupe, list normalization) is allowed only after schema-valid output.
 

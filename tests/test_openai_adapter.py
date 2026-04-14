@@ -469,12 +469,6 @@ def test_openai_summary_adapter_generates_topics_from_all_person_big_questions_v
                                     "related_people": ["people/alice-example-org"],
                                 },
                                 {
-                                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
-                                    "why_important": "Could personalize treatment and improve outcomes.",
-                                    "related_papers": ["papers/a"],
-                                    "related_people": ["people/alice-example-org"],
-                                },
-                                {
                                     "question": "How does lung microbiome composition affect lung infection severity?",
                                     "why_important": "May enable earlier intervention for respiratory disease.",
                                     "related_papers": ["papers/b"],

@@ -163,6 +163,26 @@ def test_openai_summary_adapter_person_big_questions_from_linked_papers_via_llm(
     assert "Test Paper" in person_generation_calls[0]["text"]
 
 
+def test_openai_summary_adapter_paper_summary_prompt_includes_reviewer_role_and_rubric() -> None:
+    client = FakeOpenAIClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+
+    adapter.summarize_paper(
+        "paper text",
+        {
+            "slug": "papers/test-paper",
+            "title": "Test Paper",
+            "corresponding_authors": ["alice@example.org"],
+        },
+    )
+
+    prompt = next(call["text"] for call in client.summary_calls if call["text"].startswith("Create"))
+    assert "senior reviewer for a top-tier scientific journal" in prompt
+    assert "innovation, impact, and logical rigor" in prompt
+    assert "method-to-result coherence" in prompt
+    assert "strict JSON only" in prompt
+
+
 def test_openai_summary_adapter_retries_person_generation_once_then_succeeds() -> None:
     class RetryPersonClient(FakeOpenAIClient):
         def __init__(self) -> None:
@@ -297,6 +317,37 @@ def test_openai_summary_adapter_raises_after_second_invalid_person_generation_at
     assert len(
         [call for call in client.summary_calls if call["text"].startswith("Generate person card JSON")]
     ) == 2
+
+
+def test_openai_summary_adapter_person_generation_prompt_includes_senior_professor_role_and_long_horizon_rubric() -> None:
+    class PersonPromptClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate person card JSON"):
+                return json.dumps(
+                    {
+                        "focus_area": [],
+                        "big_questions": [
+                            {
+                                "question": "How do we robustly validate signatures?",
+                                "why_important": "Avoids false biomarker claims.",
+                                "related_papers": ["papers/test-paper"],
+                            }
+                        ],
+                    }
+                )
+            return "{}"
+
+    client = PersonPromptClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    adapter.derive_person_cards(
+        [{"slug": "papers/test-paper", "title": "T", "summary": "S", "corresponding_authors": ["a@b.org"]}]
+    )
+
+    prompt = next(call["text"] for call in client.summary_calls if call["text"].startswith("Generate person card JSON"))
+    assert "senior professor" in prompt
+    assert "long-horizon" in prompt
+    assert "no fabricated papers" in prompt
 
 
 def test_openai_summary_adapter_person_generation_error_contains_person_slug_context() -> None:
@@ -646,6 +697,58 @@ def test_openai_summary_adapter_generates_topics_from_all_person_big_questions_v
             "related_papers": ["papers/a", "papers/b"],
         }
     ]
+
+
+def test_openai_summary_adapter_topic_generation_prompt_includes_senior_professor_role_and_conceptual_coherence_rubric() -> None:
+    class TopicPromptClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate topic card JSON"):
+                return json.dumps(
+                    [
+                        {
+                            "slug": "topics/x",
+                            "type": "topic",
+                            "topic": "x",
+                            "related_big_questions": [
+                                {
+                                    "question": "Q",
+                                    "why_important": "W",
+                                    "related_people": ["people/a"],
+                                    "related_papers": ["papers/a"],
+                                }
+                            ],
+                            "related_people": ["people/a"],
+                            "related_papers": ["papers/a"],
+                        }
+                    ]
+                )
+            return "{}"
+
+    client = TopicPromptClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+    adapter.derive_topic_cards(
+        [
+            {
+                "slug": "people/a",
+                "type": "person",
+                "focus_area": [],
+                "big_questions": [
+                    {
+                        "question": "Q",
+                        "why_important": "W",
+                        "related_papers": ["papers/a"],
+                    }
+                ],
+                "related_papers": ["papers/a"],
+            }
+        ]
+    )
+
+    prompt = next(call["text"] for call in client.summary_calls if call["text"].startswith("Generate topic card JSON"))
+    assert "senior professor" in prompt
+    assert "conceptual coherence" in prompt
+    assert "strict JSON array only" in prompt
 
 
 def test_openai_summary_adapter_rejects_empty_topic_payload_array() -> None:

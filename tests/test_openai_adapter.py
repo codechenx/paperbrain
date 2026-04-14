@@ -176,7 +176,11 @@ def test_openai_summary_adapter_paper_summary_prompt_includes_reviewer_role_and_
         },
     )
 
-    prompt = next(call["text"] for call in client.summary_calls if call["text"].startswith("Create"))
+    prompt = next(
+        call["text"]
+        for call in client.summary_calls
+        if call["text"].startswith("Create a concise structured summary")
+    )
     assert "senior reviewer for a top-tier scientific journal" in prompt
     assert "innovation, impact, and logical rigor" in prompt
     assert "method-to-result coherence" in prompt
@@ -432,7 +436,7 @@ def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
     ]
     assert len(client.summary_calls) == 4
     assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-page OCR/text")
-    assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
+    assert client.summary_calls[1]["text"].startswith("Create a concise structured summary")
     assert "logical flow of sections and experiments" in client.summary_calls[1]["text"]
     assert "bullet points for key results with figure references" in client.summary_calls[1]["text"]
     assert client.summary_calls[2]["text"].startswith("Generate person card JSON")
@@ -457,7 +461,7 @@ def test_openai_summary_adapter_infers_corresponding_authors_from_first_page_tex
     assert paper_card["corresponding_authors"] == ["alice@university.org"]
     assert len(client.summary_calls) == 2
     assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-page OCR/text")
-    assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
+    assert client.summary_calls[1]["text"].startswith("Create a concise structured summary")
 
 
 def test_openai_summary_adapter_uses_openai_fallback_for_missing_corresponding_authors() -> None:
@@ -484,7 +488,7 @@ def test_openai_summary_adapter_uses_openai_fallback_for_missing_corresponding_a
     assert paper_card["corresponding_authors"] == ["bob@lab.org"]
     assert len(client.summary_calls) == 3
     assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-page OCR/text")
-    assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
+    assert client.summary_calls[1]["text"].startswith("Create a concise structured summary")
     assert client.summary_calls[2]["text"].startswith("Extract corresponding author email addresses")
 
 
@@ -494,7 +498,7 @@ def test_openai_summary_adapter_formats_logical_flow_list_as_numbered_markdown()
             self.summary_calls.append({"text": text, "model": model})
             if text.startswith("Extract bibliographic metadata"):
                 return '{"authors": ["A"], "journal": "Nature", "year": 2025}'
-            if text.startswith("Create a concise structured summary of the paper"):
+            if text.startswith("Create a concise structured summary"):
                 return """
 {
   "paper_type": "article",
@@ -535,7 +539,7 @@ def test_openai_summary_adapter_supplements_key_results_from_figure_mentions() -
             self.summary_calls.append({"text": text, "model": model})
             if text.startswith("Extract bibliographic metadata"):
                 return '{"authors": ["A"], "journal": "Nature", "year": 2025}'
-            if text.startswith("Create a concise structured summary of the paper"):
+            if text.startswith("Create a concise structured summary"):
                 return """
 {
   "paper_type": "article",
@@ -573,7 +577,7 @@ def test_openai_summary_adapter_normalizes_supplementary_figure_labels() -> None
             self.summary_calls.append({"text": text, "model": model})
             if text.startswith("Extract bibliographic metadata"):
                 return '{"authors": ["A"], "journal": "Nature", "year": 2025}'
-            if text.startswith("Create a concise structured summary of the paper"):
+            if text.startswith("Create a concise structured summary"):
                 return """
 {
   "paper_type": "article",
@@ -747,7 +751,7 @@ def test_openai_summary_adapter_topic_generation_prompt_includes_senior_professo
 
     prompt = next(call["text"] for call in client.summary_calls if call["text"].startswith("Generate topic card JSON"))
     assert "senior professor" in prompt
-    assert "conceptual coherence" in prompt
+    assert "maximize conceptual coherence" in prompt
     assert "strict JSON array only" in prompt
 
 

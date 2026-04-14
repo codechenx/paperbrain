@@ -356,3 +356,63 @@ def test_summarize_does_not_delete_existing_links_when_derived_cards_omit_relati
     assert result.paper_cards == 1
     assert result.person_cards == 1
     assert result.topic_cards == 1
+
+
+def test_summarize_focus_area_from_generated_topics() -> None:
+    class FocusAreaLLM(FakeLLM):
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            return [
+                {
+                    "slug": "people/alice-university-org",
+                    "type": "person",
+                    "related_papers": [paper_cards[0]["slug"]],
+                    "focus_area": [],
+                }
+            ]
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            return [
+                {
+                    "slug": "topics/cancer-genetics",
+                    "type": "topic",
+                    "topic": "Cancer Genetics",
+                    "related_people": [person_cards[0]["slug"]],
+                    "related_papers": [person_cards[0]["related_papers"][0]],
+                }
+            ]
+
+    repo = FakeRepo()
+    llm = FocusAreaLLM()
+    SummarizeService(repo=repo, llm=llm).run(force_all=False)
+
+    assert repo.person_cards[0]["focus_area"] == ["Cancer Genetics"]
+
+
+def test_summarize_no_linked_topic_raises_value_error() -> None:
+    class NoTopicLinkLLM(FakeLLM):
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            return [
+                {
+                    "slug": "people/alice-university-org",
+                    "type": "person",
+                    "related_papers": [paper_cards[0]["slug"]],
+                },
+                {
+                    "slug": "people/soo-institute-org",
+                    "type": "person",
+                    "related_papers": [paper_cards[1]["slug"]],
+                },
+            ]
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            return [
+                {
+                    "slug": "topics/cancer-genetics",
+                    "type": "topic",
+                    "related_people": [person_cards[0]["slug"]],
+                    "related_papers": [person_cards[0]["related_papers"][0]],
+                }
+            ]
+
+    with pytest.raises(ValueError, match=r"no linked topic"):
+        SummarizeService(repo=FakeRepo(), llm=NoTopicLinkLLM()).run(force_all=False)

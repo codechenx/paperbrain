@@ -99,147 +99,69 @@ def _infer_theme_from_text(question: str, *, fallback: str = "research theme") -
     return " ".join(tokens[:5])
 
 
-def _derive_person_cards(paper_cards: list[dict]) -> list[dict]:
-    def _extract_summary_field(summary: str, key: str) -> str:
-        match = re.search(rf"(?im)^\s*{re.escape(key)}\s*:\s*(.+)$", summary)
-        return match.group(1).strip() if match else ""
+def _extract_person_seeds(paper_cards: list[dict]) -> list[dict]:
+    def _parse_author_seed(author_value: object) -> tuple[str, str, str]:
+        if isinstance(author_value, dict):
+            name = str(author_value.get("name", "")).strip()
+            email = normalize_email(str(author_value.get("email", "")))
+            affiliation = str(author_value.get("affiliation", "")).strip()
+            if email and not name:
+                name = email.split("@", 1)[0]
+            return name, email, affiliation
 
-    def _infer_focus_areas(paper_card: dict, question_entry: dict[str, object]) -> list[str]:
-        focus_areas: list[str] = []
-        seen: set[str] = set()
-        related_topics = paper_card.get("related_topics", [])
-        if isinstance(related_topics, list):
-            for topic in related_topics:
-                topic_value = str(topic).strip()
-                if not topic_value:
-                    continue
-                label = topic_value.split("/", 1)[-1].replace("-", " ").strip().title()
-                key = label.casefold()
-                if label and key not in seen:
-                    seen.add(key)
-                    focus_areas.append(label)
-        question_text = str(question_entry.get("question", "")).strip()
-        if question_text:
-            inferred_theme = _infer_theme_from_text(question_text, fallback="research synthesis")
-            key = inferred_theme.casefold()
-            if inferred_theme and key not in seen:
-                seen.add(key)
-                focus_areas.append(inferred_theme)
-        if focus_areas:
-            return focus_areas
-
-        title = str(paper_card.get("title", "")).strip()
-        fallback = _infer_theme_from_text(title, fallback="research synthesis")
-        return [fallback]
-
-    def _infer_big_question(paper_card: dict, paper_slug: str) -> dict:
-        summary = str(paper_card.get("summary", ""))
-        question_candidate = (
-            _extract_summary_field(summary, "Key question solved")
-            or _extract_summary_field(summary, "Key goal of the review")
-        )
-        if question_candidate.strip().lower() in {"", "(missing)", "none", "n/a"}:
-            question_candidate = str(paper_card.get("title", "")).strip() or "(missing)"
-        why = (
-            _extract_summary_field(summary, "Why this question is important")
-            or _extract_summary_field(summary, "Why these unsolved questions are important")
-            or "(missing)"
-        )
-        return {
-            "question": question_candidate,
-            "why_important": why,
-            "related_papers": [paper_slug] if paper_slug else [],
-        }
-
-    def _parse_author_identity(author_value: str) -> tuple[str, str]:
-        raw = author_value.strip()
+        raw = str(author_value).strip()
         if not raw:
-            return ("", "")
+            return "", "", ""
         match = re.match(r"^\s*(.*?)\s*<\s*([^>]+)\s*>\s*$", raw)
         if match:
             name = match.group(1).strip()
             email = normalize_email(match.group(2))
             if email:
-                derived_name = name or email.split("@", 1)[0]
-                return (derived_name, email)
+                return name or email.split("@", 1)[0], email, ""
         email = normalize_email(raw)
         if email:
-            return (email.split("@", 1)[0], email)
-        return (raw, "")
+            return email.split("@", 1)[0], email, ""
+        return raw, "", ""
 
     cards_by_key: dict[str, dict] = {}
     for paper_card in paper_cards:
         paper_slug = str(paper_card.get("slug", "")).strip()
-        question_entry = _infer_big_question(paper_card, paper_slug)
-        paper_focus_areas = _infer_focus_areas(paper_card, question_entry)
-        for author in paper_card.get("corresponding_authors", []):
-            name, email = _parse_author_identity(str(author))
+        authors = paper_card.get("corresponding_authors", [])
+        if not isinstance(authors, list):
+            continue
+        for author in authors:
+            name, email, affiliation = _parse_author_seed(author)
             identity = email or name
             if not identity:
                 continue
             key = identity.casefold()
-            person_slug = f"people/{slugify(identity)}"
-            affiliation = email.split("@", 1)[1] if email and "@" in email else "Unknown affiliation"
+            inferred_affiliation = affiliation or (email.split("@", 1)[1] if email and "@" in email else "Unknown affiliation")
             card = cards_by_key.setdefault(
                 key,
                 {
-                    "slug": person_slug,
+                    "slug": f"people/{slugify(identity)}",
                     "type": "person",
                     "name": name,
                     "email": email,
-                    "affiliation": affiliation,
-                    "focus_area": [],
-                    "big_questions": [],
+                    "affiliation": inferred_affiliation,
                     "related_papers": [],
                 },
             )
-            if name and not card.get("name"):
+            if name and not card["name"]:
                 card["name"] = name
-            if email and not card.get("email"):
+            if email and not card["email"]:
                 card["email"] = email
-            if affiliation and (
-                not card.get("affiliation")
-                or str(card.get("affiliation")).strip().lower() == "unknown affiliation"
+            if inferred_affiliation and (
+                not card["affiliation"] or str(card["affiliation"]).strip().lower() == "unknown affiliation"
             ):
-                card["affiliation"] = affiliation
+                card["affiliation"] = inferred_affiliation
             if paper_slug and paper_slug not in card["related_papers"]:
                 card["related_papers"].append(paper_slug)
-            existing_focus = {str(item).strip().casefold() for item in card["focus_area"]}
-            for focus_area in paper_focus_areas:
-                normalized = focus_area.strip()
-                if normalized and normalized.casefold() not in existing_focus:
-                    existing_focus.add(normalized.casefold())
-                    card["focus_area"].append(normalized)
-            if question_entry["question"]:
-                existing_questions = {
-                    str(item.get("question", "")).strip().casefold()
-                    for item in card["big_questions"]
-                    if isinstance(item, dict)
-                }
-                q_key = question_entry["question"].strip().casefold()
-                if q_key and q_key not in existing_questions:
-                    card["big_questions"].append(dict(question_entry))
-                elif q_key:
-                    for item in card["big_questions"]:
-                        if isinstance(item, dict) and str(item.get("question", "")).strip().casefold() == q_key:
-                            related = item.setdefault("related_papers", [])
-                            for slug in question_entry["related_papers"]:
-                                if slug not in related:
-                                    related.append(slug)
-                            break
-
-    for card in cards_by_key.values():
-        if not card.get("focus_area"):
-            card["focus_area"] = ["Research synthesis"]
-        if not card.get("big_questions"):
-            card["big_questions"] = [
-                {
-                    "question": "How can this research area advance the field?",
-                    "why_important": "Defines future research directions.",
-                    "related_papers": list(card.get("related_papers", [])),
-                }
-            ]
     return [cards_by_key[key] for key in sorted(cards_by_key)]
+
+
+def _derive_person_cards(paper_cards: list[dict]) -> list[dict]:
+    return _extract_person_seeds(paper_cards)
 
 
 def _derive_topic_cards(person_cards: list[dict]) -> list[dict]:
@@ -740,6 +662,68 @@ class OpenAISummaryAdapter:
             lines.append(f"{output_key}: {value}")
         return "\n".join(lines), effective_type
 
+    @staticmethod
+    def _validate_person_big_questions(payload: dict, allowed_papers: set[str]) -> list[dict]:
+        big_questions = payload.get("big_questions")
+        if not isinstance(big_questions, list) or not big_questions:
+            raise ValueError("missing non-empty big_questions")
+
+        validated: list[dict] = []
+        for entry in big_questions:
+            if not isinstance(entry, dict):
+                raise ValueError("big_questions entry must be an object")
+            question = str(entry.get("question", "")).strip()
+            why_important = str(entry.get("why_important", "")).strip()
+            related_papers_raw = entry.get("related_papers")
+            if not question or not why_important or not isinstance(related_papers_raw, list) or not related_papers_raw:
+                raise ValueError("big_questions entry missing required fields")
+            related_papers = OpenAISummaryAdapter._merge_unique(
+                [str(value).strip() for value in related_papers_raw if str(value).strip()]
+            )
+            if not related_papers:
+                raise ValueError("big_questions entry has empty related_papers")
+            if any(slug not in allowed_papers for slug in related_papers):
+                raise ValueError("related_papers must be a subset of linked papers")
+            validated.append(
+                {
+                    "question": question,
+                    "why_important": why_important,
+                    "related_papers": related_papers,
+                }
+            )
+        return validated
+
+    def _generate_person_big_questions(self, person_seed: dict, paper_cards_by_slug: dict[str, dict]) -> list[dict]:
+        linked_papers = [str(slug).strip() for slug in person_seed.get("related_papers", []) if str(slug).strip()]
+        linked_papers_set = set(linked_papers)
+        evidence_lines: list[str] = []
+        for paper_slug in linked_papers:
+            paper_card = paper_cards_by_slug.get(paper_slug, {})
+            title = str(paper_card.get("title", "")).strip() or "(missing)"
+            summary = str(paper_card.get("summary", "")).strip() or "(missing)"
+            evidence_lines.append(f"- slug: {paper_slug}\n  title: {title}\n  summary: {summary}")
+        prompt = (
+            "Generate person card JSON for the researcher below.\n"
+            "Return strict JSON object with keys: focus_area (array), big_questions (array of objects).\n"
+            "Each big_questions entry must include non-empty question, why_important, and related_papers.\n"
+            "Set focus_area to [] exactly.\n"
+            f"Each related_papers list must only use linked paper slugs: {json.dumps(linked_papers)}.\n\n"
+            f"Person seed:\n{json.dumps(person_seed, ensure_ascii=False)}\n\n"
+            "Linked paper evidence:\n"
+            + ("\n".join(evidence_lines) if evidence_lines else "- (none)")
+        )
+
+        last_error: Exception | None = None
+        for _ in range(2):
+            raw = self.client.summarize(prompt, model=self.model)
+            payload = self._extract_json_object(raw)
+            try:
+                return self._validate_person_big_questions(payload, linked_papers_set)
+            except ValueError as exc:
+                last_error = exc
+        detail = f": {last_error}" if last_error else ""
+        raise ValueError(f"person generation failed after 2 attempts{detail}")
+
     def _infer_corresponding_authors(self, paper_text: str, title: str) -> list[str]:
         first_page_text = paper_text[:4000]
         extracted = self._extract_corresponding_authors_from_text(first_page_text)
@@ -800,7 +784,17 @@ class OpenAISummaryAdapter:
         }
 
     def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
-        return _derive_person_cards(paper_cards)
+        person_seeds = _extract_person_seeds(paper_cards)
+        if not person_seeds:
+            return []
+        paper_cards_by_slug = {str(card.get("slug", "")).strip(): card for card in paper_cards}
+        person_cards: list[dict] = []
+        for seed in person_seeds:
+            card = dict(seed)
+            card["focus_area"] = []
+            card["big_questions"] = self._generate_person_big_questions(seed, paper_cards_by_slug)
+            person_cards.append(card)
+        return person_cards
 
     def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
         return _derive_topic_cards(person_cards)

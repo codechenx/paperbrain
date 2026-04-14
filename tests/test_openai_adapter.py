@@ -48,6 +48,28 @@ class FakeOpenAIClient:
 
     def summarize(self, text: str, model: str) -> str:
         self.summary_calls.append({"text": text, "model": model})
+        if text.startswith("Generate person card JSON"):
+            title_match = next(
+                (
+                    line.split("title:", 1)[1].strip()
+                    for line in text.splitlines()
+                    if "title:" in line
+                ),
+                "Research question",
+            )
+            related = "papers/test-paper" if "papers/test-paper" in text else "papers/test"
+            return json.dumps(
+                {
+                    "focus_area": [],
+                    "big_questions": [
+                        {
+                            "question": title_match,
+                            "why_important": "(missing)",
+                            "related_papers": [related],
+                        }
+                    ],
+                }
+            )
         return "generated summary"
 
 
@@ -76,7 +98,7 @@ def test_openai_embedding_adapter_uses_client_with_configured_model() -> None:
     assert client.embed_calls == [{"chunks": ["chunk 1"], "model": "text-embedding-3-small"}]
 
 
-def test_openai_summary_adapter_person_generation_via_llm_from_linked_papers() -> None:
+def test_openai_summary_adapter_person_big_questions_from_linked_papers_via_llm() -> None:
     class PersonLLMClient(FakeOpenAIClient):
         def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
             self.summary_calls.append({"text": text, "model": model})
@@ -208,9 +230,9 @@ def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
             "slug": "people/alice-example-org",
             "type": "person",
             "name": "alice",
-                "email": "alice@example.org",
-                "affiliation": "example.org",
-                "focus_area": ["test paper"],
+            "email": "alice@example.org",
+            "affiliation": "example.org",
+            "focus_area": [],
             "big_questions": [
                 {
                     "question": "Test Paper",
@@ -238,11 +260,12 @@ def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
             "related_papers": ["papers/test-paper"],
         }
     ]
-    assert len(client.summary_calls) == 2
+    assert len(client.summary_calls) == 3
     assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-page OCR/text")
     assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
     assert "logical flow of sections and experiments" in client.summary_calls[1]["text"]
     assert "bullet points for key results with figure references" in client.summary_calls[1]["text"]
+    assert client.summary_calls[2]["text"].startswith("Generate person card JSON")
 
 
 def test_openai_summary_adapter_infers_corresponding_authors_from_first_page_text() -> None:

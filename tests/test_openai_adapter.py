@@ -183,6 +183,7 @@ def test_openai_summary_adapter_paper_summary_prompt_includes_reviewer_role_and_
     )
     assert "senior reviewer for a top-tier scientific journal" in prompt
     assert "innovation, impact, and logical rigor" in prompt
+    assert "Evidence boundary: Use only the supplied paper text. No external facts, assumptions, or citations." in prompt
     assert "method-to-result coherence" in prompt
     assert "strict JSON only" in prompt
 
@@ -460,7 +461,13 @@ def test_openai_summary_adapter_infers_corresponding_authors_from_first_page_tex
 
     assert paper_card["corresponding_authors"] == ["alice@university.org"]
     assert len(client.summary_calls) == 2
-    assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-page OCR/text")
+    prompt = client.summary_calls[0]["text"]
+    assert prompt.startswith("Extract bibliographic metadata from the first-page OCR/text")
+    assert "Role: You are a precise scientific metadata extraction assistant." in prompt
+    assert "Objective: Extract bibliographic metadata from first-page OCR text." in prompt
+    assert "Evidence boundary: Use only the text provided below; do not use outside knowledge." in prompt
+    assert "Output contract: Return strict JSON object only with keys authors (array of strings), journal (string), year (integer)." in prompt
+    assert "Defaults/failure policy: If unknown, use authors=[], journal=\"\", year=0." in prompt
     assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
 
 
@@ -489,7 +496,11 @@ def test_openai_summary_adapter_uses_openai_fallback_for_missing_corresponding_a
     assert len(client.summary_calls) == 3
     assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-page OCR/text")
     assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
-    assert client.summary_calls[2]["text"].startswith("Extract corresponding author email addresses")
+    fallback_prompt = client.summary_calls[2]["text"]
+    assert fallback_prompt.startswith("Extract corresponding author email addresses")
+    assert "Role: You are an extraction assistant for author contact metadata." in fallback_prompt
+    assert "Output contract: Return strict JSON array only, no prose." in fallback_prompt
+    assert "Evidence boundary: Use only the provided first-page text." in fallback_prompt
 
 
 def test_openai_summary_adapter_formats_logical_flow_list_as_numbered_markdown() -> None:

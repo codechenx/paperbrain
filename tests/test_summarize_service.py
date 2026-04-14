@@ -308,7 +308,7 @@ def test_postgres_persists_person_and_topic_links() -> None:
     assert connection.transaction_exited == 2
 
 
-def test_summarize_does_not_delete_existing_links_when_derived_cards_omit_relations() -> None:
+def test_summarize_does_not_delete_existing_paper_links_when_cards_omit_paper_relations() -> None:
     connection = FakeConnection(
         rows_sequence=[
             [
@@ -340,19 +340,29 @@ def test_summarize_does_not_delete_existing_links_when_derived_cards_omit_relati
             }
 
         def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
-            _ = paper_cards
-            return [{"slug": "people/alice-university-org", "type": "person", "focus_area": "Cancer genomics"}]
+            return [
+                {
+                    "slug": "people/alice-university-org",
+                    "type": "person",
+                    "focus_area": "Cancer genomics",
+                }
+            ]
 
         def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
-            _ = person_cards
-            return [{"slug": "topics/cancer-genomics", "type": "topic", "topic": "Cancer Genomics"}]
+            return [
+                {
+                    "slug": "topics/cancer-genomics",
+                    "type": "topic",
+                    "topic": "Cancer Genomics",
+                    "related_people": [person_cards[0]["slug"]],
+                }
+            ]
 
     result = SummarizeService(repo=repo, llm=SparseLLM()).run(force_all=False)
 
     executed_sql = "\n".join(sql for sql, _ in connection.executed)
     assert "DELETE FROM paper_person_links" not in executed_sql
     assert "DELETE FROM paper_topic_links" not in executed_sql
-    assert "DELETE FROM person_topic_links" not in executed_sql
     assert result.paper_cards == 1
     assert result.person_cards == 1
     assert result.topic_cards == 1
@@ -388,6 +398,30 @@ def test_summarize_focus_area_from_generated_topics() -> None:
     assert repo.person_cards[0]["focus_area"] == ["Cancer Genetics"]
 
 
+def test_summarize_derives_topics_before_persisting_people() -> None:
+    class TwoPassLLM(FakeLLM):
+        def __init__(self) -> None:
+            super().__init__()
+            self.topic_derived = False
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            self.topic_derived = True
+            return super().derive_topic_cards(person_cards)
+
+    class OrderCheckingRepo(FakeRepo):
+        def __init__(self, llm: TwoPassLLM) -> None:
+            super().__init__()
+            self._llm = llm
+
+        def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            assert self._llm.topic_derived is True
+            super().upsert_person_cards(cards, replace_existing=replace_existing)
+
+    llm = TwoPassLLM()
+    repo = OrderCheckingRepo(llm)
+    SummarizeService(repo=repo, llm=llm).run(force_all=False)
+
+
 def test_summarize_no_linked_topic_raises_value_error() -> None:
     class NoTopicLinkLLM(FakeLLM):
         def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
@@ -414,5 +448,5 @@ def test_summarize_no_linked_topic_raises_value_error() -> None:
                 }
             ]
 
-    with pytest.raises(ValueError, match=r"no linked topic"):
+    with pytest.raises(ValueError, match=r"No linked topics found for person card"):
         SummarizeService(repo=FakeRepo(), llm=NoTopicLinkLLM()).run(force_all=False)

@@ -70,6 +70,26 @@ class FakeOpenAIClient:
                     ],
                 }
             )
+        if text.startswith("Generate topic card JSON"):
+            return json.dumps(
+                [
+                    {
+                        "slug": "topics/test-paper",
+                        "type": "topic",
+                        "topic": "test paper",
+                        "related_big_questions": [
+                            {
+                                "question": "Test Paper",
+                                "why_important": "(missing)",
+                                "related_papers": ["papers/test-paper"],
+                                "related_people": ["people/alice-example-org"],
+                            }
+                        ],
+                        "related_people": ["people/alice-example-org"],
+                        "related_papers": ["papers/test-paper"],
+                    }
+                ]
+            )
         return "generated summary"
 
 
@@ -280,12 +300,13 @@ def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
             "related_papers": ["papers/test-paper"],
         }
     ]
-    assert len(client.summary_calls) == 3
+    assert len(client.summary_calls) == 4
     assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-page OCR/text")
     assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
     assert "logical flow of sections and experiments" in client.summary_calls[1]["text"]
     assert "bullet points for key results with figure references" in client.summary_calls[1]["text"]
     assert client.summary_calls[2]["text"].startswith("Generate person card JSON")
+    assert client.summary_calls[3]["text"].startswith("Generate topic card JSON")
 
 
 def test_openai_summary_adapter_infers_corresponding_authors_from_first_page_text() -> None:

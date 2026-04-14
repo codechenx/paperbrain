@@ -693,6 +693,225 @@ class OpenAISummaryAdapter:
             )
         return validated
 
+    @staticmethod
+    def _extract_json_array_strict(raw: str) -> list[object]:
+        text = raw.strip()
+        if not text:
+            raise ValueError("empty topic payload")
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError("topic payload must be strict JSON array") from exc
+        if not isinstance(parsed, list):
+            raise ValueError("topic payload must be strict JSON array")
+        return parsed
+
+    @staticmethod
+    def _topic_reference_index(person_cards: list[dict]) -> tuple[set[str], set[str], dict[str, dict]]:
+        known_people: set[str] = set()
+        known_papers: set[str] = set()
+        questions: dict[str, dict] = {}
+
+        for person_card in person_cards:
+            person_slug = str(person_card.get("slug", "")).strip()
+            if person_slug:
+                known_people.add(person_slug)
+
+            person_papers = OpenAISummaryAdapter._merge_unique(
+                [str(value).strip() for value in OpenAISummaryAdapter._as_string_list(person_card.get("related_papers"))]
+            )
+            known_papers.update(person_papers)
+
+            raw_questions = person_card.get("big_questions")
+            if not isinstance(raw_questions, list):
+                continue
+            for entry in raw_questions:
+                if not isinstance(entry, dict):
+                    continue
+                question = str(entry.get("question", "")).strip()
+                if not question:
+                    continue
+                question_key = question.casefold()
+                question_why = str(entry.get("why_important", "")).strip()
+                question_papers = OpenAISummaryAdapter._merge_unique(
+                    [
+                        str(value).strip()
+                        for value in OpenAISummaryAdapter._as_string_list(entry.get("related_papers")) or person_papers
+                    ]
+                )
+                known_papers.update(question_papers)
+                question_ref = questions.setdefault(
+                    question_key,
+                    {
+                        "question": question,
+                        "why_important": question_why,
+                        "people": set(),
+                        "papers": set(),
+                    },
+                )
+                if person_slug:
+                    question_ref["people"].add(person_slug)
+                question_ref["papers"].update(question_papers)
+                if question_why and not question_ref["why_important"]:
+                    question_ref["why_important"] = question_why
+
+        return known_people, known_papers, questions
+
+    @staticmethod
+    def _validate_topic_cards_payload(payload: list[object], person_cards: list[dict]) -> list[dict]:
+        known_people, known_papers, known_questions = OpenAISummaryAdapter._topic_reference_index(person_cards)
+        validated: list[dict] = []
+        for entry in payload:
+            if not isinstance(entry, dict):
+                raise ValueError("topic entry must be an object")
+            required = {
+                "slug",
+                "type",
+                "topic",
+                "related_big_questions",
+                "related_people",
+                "related_papers",
+            }
+            if any(key not in entry for key in required):
+                raise ValueError("topic entry missing required fields")
+
+            slug = str(entry.get("slug", "")).strip()
+            topic_type = str(entry.get("type", "")).strip()
+            topic = str(entry.get("topic", "")).strip()
+            if not slug or not topic_type or not topic:
+                raise ValueError("topic entry missing required string fields")
+            if topic_type != "topic":
+                raise ValueError("topic entry type must be topic")
+
+            related_people_raw = entry.get("related_people")
+            related_papers_raw = entry.get("related_papers")
+            related_big_questions_raw = entry.get("related_big_questions")
+            if not isinstance(related_people_raw, list) or not isinstance(related_papers_raw, list):
+                raise ValueError("topic entry related_people/related_papers must be arrays")
+            if not isinstance(related_big_questions_raw, list) or not related_big_questions_raw:
+                raise ValueError("topic entry missing non-empty related_big_questions")
+
+            related_people = OpenAISummaryAdapter._merge_unique(
+                [str(value).strip() for value in related_people_raw if str(value).strip()]
+            )
+            related_papers = OpenAISummaryAdapter._merge_unique(
+                [str(value).strip() for value in related_papers_raw if str(value).strip()]
+            )
+            if any(person_slug not in known_people for person_slug in related_people):
+                raise ValueError("topic related_people must reference known person slugs")
+            if any(paper_slug not in known_papers for paper_slug in related_papers):
+                raise ValueError("topic related_papers must reference known paper slugs")
+
+            validated_questions: list[dict] = []
+            for question_entry in related_big_questions_raw:
+                if not isinstance(question_entry, dict):
+                    raise ValueError("related_big_questions entry must be an object")
+                question = str(question_entry.get("question", "")).strip()
+                why_important = str(question_entry.get("why_important", "")).strip()
+                raw_question_people = question_entry.get("related_people")
+                raw_question_papers = question_entry.get("related_papers")
+                if (
+                    not question
+                    or not why_important
+                    or not isinstance(raw_question_people, list)
+                    or not isinstance(raw_question_papers, list)
+                ):
+                    raise ValueError("related_big_questions entry missing required fields")
+                question_people = OpenAISummaryAdapter._merge_unique(
+                    [str(value).strip() for value in raw_question_people if str(value).strip()]
+                )
+                question_papers = OpenAISummaryAdapter._merge_unique(
+                    [str(value).strip() for value in raw_question_papers if str(value).strip()]
+                )
+                if not question_people or not question_papers:
+                    raise ValueError("related_big_questions entry must have related_people and related_papers")
+                if any(person_slug not in known_people for person_slug in question_people):
+                    raise ValueError("related_big_questions people must reference known person slugs")
+                if any(paper_slug not in known_papers for paper_slug in question_papers):
+                    raise ValueError("related_big_questions papers must reference known paper slugs")
+                if any(person_slug not in related_people for person_slug in question_people):
+                    raise ValueError("related_big_questions people must exist in topic related_people")
+                if any(paper_slug not in related_papers for paper_slug in question_papers):
+                    raise ValueError("related_big_questions papers must exist in topic related_papers")
+
+                question_ref = known_questions.get(question.casefold())
+                if question_ref is None:
+                    raise ValueError("related_big_questions question must reference known input big questions")
+                if any(person_slug not in question_ref["people"] for person_slug in question_people):
+                    raise ValueError("related_big_questions people do not match source big-question links")
+                if any(paper_slug not in question_ref["papers"] for paper_slug in question_papers):
+                    raise ValueError("related_big_questions papers do not match source big-question links")
+
+                validated_questions.append(
+                    {
+                        "question": question_ref["question"],
+                        "why_important": why_important,
+                        "related_people": question_people,
+                        "related_papers": question_papers,
+                    }
+                )
+
+            validated.append(
+                {
+                    "slug": slug,
+                    "type": topic_type,
+                    "topic": topic,
+                    "related_big_questions": validated_questions,
+                    "related_people": related_people,
+                    "related_papers": related_papers,
+                }
+            )
+        return validated
+
+    @staticmethod
+    def _build_topic_prompt(person_cards: list[dict]) -> str:
+        prompt_people: list[dict] = []
+        for person_card in person_cards:
+            slug = str(person_card.get("slug", "")).strip()
+            related_papers = OpenAISummaryAdapter._merge_unique(
+                [str(value).strip() for value in OpenAISummaryAdapter._as_string_list(person_card.get("related_papers"))]
+            )
+            big_questions: list[dict] = []
+            raw_questions = person_card.get("big_questions")
+            if isinstance(raw_questions, list):
+                for item in raw_questions:
+                    if not isinstance(item, dict):
+                        continue
+                    question = str(item.get("question", "")).strip()
+                    why_important = str(item.get("why_important", "")).strip()
+                    question_papers = OpenAISummaryAdapter._merge_unique(
+                        [
+                            str(value).strip()
+                            for value in OpenAISummaryAdapter._as_string_list(item.get("related_papers")) or related_papers
+                        ]
+                    )
+                    if question:
+                        big_questions.append(
+                            {
+                                "question": question,
+                                "why_important": why_important,
+                                "related_papers": question_papers,
+                            }
+                        )
+            prompt_people.append(
+                {
+                    "slug": slug,
+                    "related_papers": related_papers,
+                    "big_questions": big_questions,
+                }
+            )
+
+        return (
+            "Generate topic card JSON from all provided person cards and big questions.\n"
+            "Return strict JSON array only (no markdown/no prose).\n"
+            "Each topic card must include: slug, type, topic, related_big_questions, related_people, related_papers.\n"
+            "Set type to \"topic\".\n"
+            "Each related_big_questions entry must include: question, why_important, related_people, related_papers.\n"
+            "Use only person slugs and paper slugs from the input.\n"
+            "related_big_questions must be non-empty and reference the input big questions.\n\n"
+            f"Input person cards:\n{json.dumps(prompt_people, ensure_ascii=False)}"
+        )
+
     def _generate_person_big_questions(self, person_seed: dict, paper_cards_by_slug: dict[str, dict]) -> list[dict]:
         linked_papers = [str(slug).strip() for slug in person_seed.get("related_papers", []) if str(slug).strip()]
         linked_papers_set = set(linked_papers)
@@ -798,7 +1017,20 @@ class OpenAISummaryAdapter:
         return person_cards
 
     def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
-        return _derive_topic_cards(person_cards)
+        if not person_cards:
+            return []
+
+        prompt = self._build_topic_prompt(person_cards)
+        last_error: Exception | None = None
+        for _ in range(2):
+            raw = self.client.summarize(prompt, model=self.model)
+            try:
+                payload = self._extract_json_array_strict(raw)
+                return self._validate_topic_cards_payload(payload, person_cards)
+            except ValueError as exc:
+                last_error = exc
+        detail = f": {last_error}" if last_error else ""
+        raise ValueError(f"topic generation failed after 2 attempts{detail}")
 
 
 class DeterministicLLMAdapter:

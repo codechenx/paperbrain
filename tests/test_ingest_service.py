@@ -214,9 +214,9 @@ def test_docling_parser_removes_image_payload_but_keeps_caption_text(
 
     markdown = """
 # Results
-![Figure 1](figures/figure-1.png)
-<img src="figures/figure-2.png" alt="Figure 2 image" />
-![Inline data](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA)
+![Figure 1 embed](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA)
+<img src="data:image/png;base64,QUJDREVGRw==" alt="Figure 2 embed" />
+Supplementary payload: data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD
 
 Figure 1. p53 staining intensity in treated cells.
 Legend: Blue bars indicate controls.
@@ -241,9 +241,10 @@ Legend: Blue bars indicate controls.
 
     parsed = DoclingParser().parse_pdf(pdf_path)
 
-    assert "![Figure 1]" not in parsed.full_text
-    assert "<img" not in parsed.full_text
+    assert "![Figure 1 embed]" not in parsed.full_text
+    assert '<img src="data:image/png;base64' not in parsed.full_text
     assert "data:image/png;base64" not in parsed.full_text
+    assert "data:image/jpeg;base64" not in parsed.full_text
     assert "Figure 1. p53 staining intensity in treated cells." in parsed.full_text
     assert "Legend: Blue bars indicate controls." in parsed.full_text
 

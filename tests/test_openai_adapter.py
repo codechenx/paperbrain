@@ -449,10 +449,46 @@ def test_openai_summary_adapter_normalizes_supplementary_figure_labels() -> None
     assert "Figure Figure S1" not in paper["summary"]
 
 
-def test_topic_derivation_is_deterministic_and_data_driven() -> None:
-    client = FakeOpenAIClient()
-    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+def test_openai_summary_adapter_generates_topics_from_all_person_big_questions_via_llm() -> None:
+    class TopicLLMClient(FakeOpenAIClient):
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate topic card JSON"):
+                return json.dumps(
+                    [
+                        {
+                            "slug": "topics/gut-microbiome-and-lung-cancer-treatment",
+                            "type": "topic",
+                            "topic": "gut microbiome and lung cancer treatment",
+                            "related_big_questions": [
+                                {
+                                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                                    "why_important": "Could personalize treatment and improve outcomes.",
+                                    "related_papers": ["papers/a"],
+                                    "related_people": ["people/alice-example-org"],
+                                },
+                                {
+                                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                                    "why_important": "Could personalize treatment and improve outcomes.",
+                                    "related_papers": ["papers/a"],
+                                    "related_people": ["people/alice-example-org"],
+                                },
+                                {
+                                    "question": "How does lung microbiome composition affect lung infection severity?",
+                                    "why_important": "May enable earlier intervention for respiratory disease.",
+                                    "related_papers": ["papers/b"],
+                                    "related_people": ["people/bob-example-org"],
+                                },
+                            ],
+                            "related_people": ["people/alice-example-org", "people/bob-example-org"],
+                            "related_papers": ["papers/a", "papers/b"],
+                        }
+                    ]
+                )
+            return "{}"
 
+    client = TopicLLMClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
     person_cards = [
         {
             "slug": "people/alice-example-org",
@@ -484,86 +520,81 @@ def test_topic_derivation_is_deterministic_and_data_driven() -> None:
 
     topic_cards = adapter.derive_topic_cards(person_cards)
 
-    assert {card["slug"] for card in topic_cards} == {
-        "topics/gut-microbiome-and-lung-cancer-treatment",
-        "topics/lung-microbiome-and-lung-infection",
-    }
-    assert all(card["slug"] != "topics/research-synthesis" for card in topic_cards)
-    cancer_microbiome_card = next(
-        card for card in topic_cards if card["slug"] == "topics/gut-microbiome-and-lung-cancer-treatment"
-    )
-    lung_infection_card = next(card for card in topic_cards if card["slug"] == "topics/lung-microbiome-and-lung-infection")
-    assert cancer_microbiome_card["topic"] == "gut microbiome and lung cancer treatment"
-    assert cancer_microbiome_card["related_people"] == ["people/alice-example-org"]
-    assert cancer_microbiome_card["related_papers"] == ["papers/a"]
-    assert cancer_microbiome_card["related_big_questions"] == [
-        {
-            "question": "How can gut microbiome signals improve lung cancer treatment response?",
-            "why_important": "Could personalize treatment and improve outcomes.",
-            "related_papers": ["papers/a"],
-            "related_people": ["people/alice-example-org"],
-        }
+    topic_generation_calls = [
+        call for call in client.summary_calls if call["text"].startswith("Generate topic card JSON")
     ]
-    assert lung_infection_card["topic"] == "lung microbiome and lung infection"
-    assert lung_infection_card["related_people"] == ["people/bob-example-org"]
-    assert lung_infection_card["related_papers"] == ["papers/b"]
-    assert lung_infection_card["related_big_questions"] == [
+    assert len(topic_generation_calls) == 1
+    assert "people/alice-example-org" in topic_generation_calls[0]["text"]
+    assert "people/bob-example-org" in topic_generation_calls[0]["text"]
+    assert "How can gut microbiome signals improve lung cancer treatment response?" in topic_generation_calls[0]["text"]
+    assert "How does lung microbiome composition affect lung infection severity?" in topic_generation_calls[0]["text"]
+    assert topic_cards == [
         {
-            "question": "How does lung microbiome composition affect lung infection severity?",
-            "why_important": "May enable earlier intervention for respiratory disease.",
-            "related_papers": ["papers/b"],
-            "related_people": ["people/bob-example-org"],
-        }
-    ]
-
-
-def test_topic_derivation_merges_duplicate_big_questions_across_people() -> None:
-    client = FakeOpenAIClient()
-    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
-
-    shared_question = "How can gut microbiome signals improve lung cancer treatment response?"
-    person_cards = [
-        {
-            "slug": "people/alice-example-org",
-            "type": "person",
-            "focus_area": [],
-            "big_questions": [
+            "slug": "topics/gut-microbiome-and-lung-cancer-treatment",
+            "type": "topic",
+            "topic": "gut microbiome and lung cancer treatment",
+            "related_big_questions": [
                 {
-                    "question": shared_question,
+                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
                     "why_important": "Could personalize treatment and improve outcomes.",
                     "related_papers": ["papers/a"],
-                }
-            ],
-            "related_papers": ["papers/a"],
-        },
-        {
-            "slug": "people/bob-example-org",
-            "type": "person",
-            "focus_area": [],
-            "big_questions": [
+                    "related_people": ["people/alice-example-org"],
+                },
                 {
-                    "question": shared_question,
+                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
                     "why_important": "Could personalize treatment and improve outcomes.",
+                    "related_papers": ["papers/a"],
+                    "related_people": ["people/alice-example-org"],
+                },
+                {
+                    "question": "How does lung microbiome composition affect lung infection severity?",
+                    "why_important": "May enable earlier intervention for respiratory disease.",
                     "related_papers": ["papers/b"],
-                }
+                    "related_people": ["people/bob-example-org"],
+                },
             ],
-            "related_papers": ["papers/b"],
-        },
-    ]
-
-    topic_cards = adapter.derive_topic_cards(person_cards)
-    assert len(topic_cards) == 1
-    assert topic_cards[0]["slug"] == "topics/gut-microbiome-and-lung-cancer-treatment"
-    assert topic_cards[0]["related_people"] == ["people/alice-example-org", "people/bob-example-org"]
-    assert topic_cards[0]["related_papers"] == ["papers/a", "papers/b"]
-    assert topic_cards[0]["related_big_questions"] == [
-        {
-            "question": shared_question,
-            "why_important": "Could personalize treatment and improve outcomes.",
-            "related_papers": ["papers/a", "papers/b"],
             "related_people": ["people/alice-example-org", "people/bob-example-org"],
+            "related_papers": ["papers/a", "papers/b"],
         }
     ]
+
+
+def test_openai_summary_adapter_retries_topic_generation_once_then_raises() -> None:
+    class RetryTopicClient(FakeOpenAIClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.topic_attempts = 0
+
+        def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
+            self.summary_calls.append({"text": text, "model": model})
+            if text.startswith("Generate topic card JSON"):
+                self.topic_attempts += 1
+                return '{"topic_cards": []}'
+            return "{}"
+
+    client = RetryTopicClient()
+    adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
+
+    with pytest.raises(ValueError, match=r"topic generation failed after 2 attempts"):
+        adapter.derive_topic_cards(
+            [
+                {
+                    "slug": "people/alice-example-org",
+                    "type": "person",
+                    "focus_area": [],
+                    "big_questions": [
+                        {
+                            "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                            "why_important": "Could personalize treatment and improve outcomes.",
+                            "related_papers": ["papers/a"],
+                        }
+                    ],
+                    "related_papers": ["papers/a"],
+                }
+            ]
+        )
+
+    assert client.topic_attempts == 2
 
 
 def test_deterministic_adapter_person_cards_include_focus_and_big_questions_contract() -> None:

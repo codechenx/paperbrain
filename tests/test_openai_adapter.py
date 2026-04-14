@@ -6,6 +6,7 @@ import pytest
 from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
 from paperbrain.adapters.llm import DeterministicLLMAdapter, OpenAISummaryAdapter
 from paperbrain.adapters.openai_client import OpenAIClient
+import paperbrain.adapters.llm as llm_module
 
 
 class FakeEmbeddingsAPI:
@@ -91,6 +92,13 @@ class FakeOpenAIClient:
                 ]
             )
         return "generated summary"
+
+
+def test_llm_module_no_longer_exposes_legacy_heuristic_symbols() -> None:
+    assert not hasattr(llm_module, "_infer_theme_from_text")
+    assert not hasattr(llm_module, "_derive_person_cards")
+    assert not hasattr(llm_module, "_derive_topic_cards")
+    assert not hasattr(llm_module, "DeterministicLLMAdapter")
 
 
 def test_openai_client_calls_embedding_and_summary() -> None:

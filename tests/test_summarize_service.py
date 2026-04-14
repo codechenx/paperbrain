@@ -76,6 +76,7 @@ class FakeLLM:
         return {
             "slug": metadata["slug"],
             "type": "article",
+            "paper_type": "article",
             "title": metadata["title"],
             "summary": "x",
             "corresponding_authors": metadata["corresponding_authors"],
@@ -206,6 +207,7 @@ def test_summarize_generates_person_topic_when_corresponding_authors_inferred() 
             return {
                 "slug": metadata["slug"],
                 "type": "article",
+                "paper_type": "article",
                 "title": metadata["title"],
                 "summary": "x",
                 "corresponding_authors": ["inferred@example.org"],
@@ -263,6 +265,7 @@ def test_summarize_focus_area_from_generated_topics() -> None:
             return {
                 "slug": metadata["slug"],
                 "type": "article",
+                "paper_type": "article",
                 "title": metadata["title"],
                 "summary": "x",
                 "corresponding_authors": metadata["corresponding_authors"],
@@ -325,6 +328,7 @@ def test_summarize_raises_value_error_when_person_has_no_linked_topic() -> None:
             return {
                 "slug": metadata["slug"],
                 "type": "article",
+                "paper_type": "article",
                 "title": metadata["title"],
                 "summary": "x",
                 "corresponding_authors": metadata["corresponding_authors"],
@@ -458,6 +462,7 @@ def test_summarize_does_not_delete_existing_paper_links_when_cards_omit_paper_re
             return {
                 "slug": metadata["slug"],
                 "type": "article",
+                "paper_type": "article",
                 "title": metadata["title"],
                 "summary": "x",
                 "corresponding_authors": metadata["corresponding_authors"],

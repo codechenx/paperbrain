@@ -450,6 +450,7 @@ def test_openai_summary_adapter_normalizes_supplementary_figure_labels() -> None
 
 
 def test_openai_summary_adapter_generates_topics_from_all_person_big_questions_via_llm() -> None:
+    # Red-phase test.
     class TopicLLMClient(FakeOpenAIClient):
         def summarize(self, text: str, model: str) -> str:  # noqa: ARG002
             self.summary_calls.append({"text": text, "model": model})
@@ -541,12 +542,6 @@ def test_openai_summary_adapter_generates_topics_from_all_person_big_questions_v
                     "related_people": ["people/alice-example-org"],
                 },
                 {
-                    "question": "How can gut microbiome signals improve lung cancer treatment response?",
-                    "why_important": "Could personalize treatment and improve outcomes.",
-                    "related_papers": ["papers/a"],
-                    "related_people": ["people/alice-example-org"],
-                },
-                {
                     "question": "How does lung microbiome composition affect lung infection severity?",
                     "why_important": "May enable earlier intervention for respiratory disease.",
                     "related_papers": ["papers/b"],
@@ -560,6 +555,7 @@ def test_openai_summary_adapter_generates_topics_from_all_person_big_questions_v
 
 
 def test_openai_summary_adapter_retries_topic_generation_once_then_raises() -> None:
+    # Red-phase test.
     class RetryTopicClient(FakeOpenAIClient):
         def __init__(self) -> None:
             super().__init__()
@@ -569,7 +565,27 @@ def test_openai_summary_adapter_retries_topic_generation_once_then_raises() -> N
             self.summary_calls.append({"text": text, "model": model})
             if text.startswith("Generate topic card JSON"):
                 self.topic_attempts += 1
-                return '{"topic_cards": []}'
+                return json.dumps(
+                    {
+                        "topic_cards": [
+                            {
+                                "slug": "topics/gut-microbiome-and-lung-cancer-treatment",
+                                "type": "topic",
+                                "topic": "gut microbiome and lung cancer treatment",
+                                "related_big_questions": [
+                                    {
+                                        "question": "How can gut microbiome signals improve lung cancer treatment response?",
+                                        "why_important": "Could personalize treatment and improve outcomes.",
+                                        "related_papers": ["papers/a"],
+                                        "related_people": ["people/alice-example-org"],
+                                    }
+                                ],
+                                "related_people": ["people/alice-example-org"],
+                                "related_papers": ["papers/a"],
+                            }
+                        ]
+                    }
+                )
             return "{}"
 
     client = RetryTopicClient()

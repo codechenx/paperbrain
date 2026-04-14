@@ -9,18 +9,27 @@ It uses:
 
 ---
 
-## 1. What PaperBrain does
+## Core Concept
 
-PaperBrain focuses on this workflow:
-1. Ingest PDFs and extract metadata/text
-2. Build chunk embeddings for hybrid retrieval
-3. Generate structured **paper/person/topic** cards
-4. Link cards bidirectionally
-5. Export everything as markdown files
+PaperBrain is a **card-system design** for a **scientific question-centric** paper digest:
+- **question-centered paper cards** capture each paper's key question, reasoning, evidence, and limitations
+- **person cards** track long-horizon big questions from linked papers
+- **topic cards** group coherent cross-person themes
 
 ---
 
-## 2. Data flow (ASCII, with card design detail)
+## 1. What PaperBrain does
+
+PaperBrain focuses on a **question-centric workflow**:
+1. Ingest PDFs and extract metadata/text for question-aware synthesis
+2. Build chunk embeddings for question-grounded hybrid retrieval
+3. Generate structured **paper/person/topic** cards around questions and evidence
+4. Link cards bidirectionally across questions, people, and topics
+5. Export everything as markdown files for iterative question tracking
+
+---
+
+## 2. Data flow (ASCII, with question-centric card design detail)
 
 ```text
 ┌──────────────────────────────┐
@@ -47,10 +56,10 @@ PaperBrain focuses on this workflow:
                      ▼
       ┌─────────────────────────────────────────────────────────────┐
       │ OpenAI summarization + deterministic post-processing        │
-      │ - paper card sections                                       │
-      │ - person cards from corresponding authors                   │
-      │ - topic cards from person big-questions (theme grouped)     │
-      │ - figure/caption-aware key-result supplementation           │
+      │ - question-centered paper cards (Q/reasoning/evidence/lim)  │
+      │ - person cards from corresponding-author big questions       │
+      │ - topic cards from cross-person big-question themes          │
+      │ - figure/caption-aware evidence supplementation              │
       └──────────────┬──────────────────────────────────────────────┘
                      ▼
 ┌───────────────────────────────────────────────────────────────────────────┐
@@ -80,15 +89,15 @@ Paper card (papers/<slug>)
     Corresponding authors: [[people/...]]
     Related topics: [[topics/...]]
     Article:
-      - Key question solved
+      - Primary question addressed
       - Why this question is important
-      - How the paper solves this question
-      - Key findings and flow
+      - Reasoning path used to answer the question
+      - Key evidence and flow
         * Logical flow of sections/experiments (numbered)
         * Key results with figure references (bulleted)
       - Limitations of the paper
     Review:
-      - Key goal of the review
+      - Key review question
       - Key unsolved questions
       - Why these unsolved questions are important
       - Why these unsolved questions are still unsolved
@@ -98,7 +107,7 @@ Person card (people/<normalized-email>)
     slug, type: person, name, email, affiliation
   Body:
     - Focus area
-    - Big questions:
+    - Big questions (long-horizon):
       * Question
       * Why important
       * Related papers
@@ -109,7 +118,7 @@ Topic card (topics/<normalized-theme>)
     slug, type: topic, topic
   Body:
     - Topic
-    - Related big questions:
+    - Related big questions (cross-person):
       * Question
       * Why important
       * Related papers

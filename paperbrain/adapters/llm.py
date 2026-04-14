@@ -547,9 +547,17 @@ class OpenAISummaryAdapter:
 
     def _infer_bibliographic_fields(self, *, title: str, first_page_text: str) -> dict:
         prompt = (
-            "Extract bibliographic metadata from the first-page OCR/text. "
-            "Return strict JSON with keys: authors (array of strings), journal (string), year (integer). "
-            "Use empty array/string/0 when unknown.\n\n"
+            "Extract bibliographic metadata from the first-page OCR/text.\n"
+            "Role: You are a precise scientific metadata extraction assistant.\n"
+            "Objective: Extract bibliographic metadata from first-page OCR text.\n"
+            "Evidence boundary: Use only the text provided below; do not use outside knowledge.\n"
+            "Rubric/checklist:\n"
+            "- Authors must be actual author names found in the provided page text.\n"
+            "- Journal must be the publication venue stated in the text.\n"
+            "- Year must be the publication year as an integer.\n"
+            "Output contract: Return strict JSON object only with keys authors (array of strings), "
+            "journal (string), year (integer).\n"
+            "Defaults/failure policy: If unknown, use authors=[], journal=\"\", year=0.\n\n"
             f"Title: {title}\n\n"
             f"{first_page_text[:5000]}"
         )
@@ -563,14 +571,25 @@ class OpenAISummaryAdapter:
 
     def _build_summary(self, *, title: str, paper_type: str, paper_text: str) -> tuple[str, str]:
         prompt = (
-            "Create a concise structured summary of the paper using ONLY the provided text. "
-            "Return strict JSON. "
-            "For article papers, include keys: key_question_solved, why_important, method, "
-            "findings_logical_flow, key_results_with_figures (array of objects with keys 'figure' and 'result'), limitations. "
-            "For review papers, include keys: key_goal, unsolved_questions, why_important, why_unsolved. "
-            "For article papers, key findings and flow must describe the logical flow of sections and experiments, "
-            "plus bullet points for key results with figure references (for example Figure 1, Figure 2). "
-            f"Also include paper_type as either 'article' or 'review'.\n\nTitle: {title}\n\n"
+            "Create a concise structured summary of the paper using ONLY the provided text.\n"
+            "Role: You are a senior reviewer for a top-tier scientific journal who evaluates scientific work for "
+            "innovation, impact, and logical rigor.\n"
+            "Objective: Produce a faithful, evidence-grounded summary with clear scientific reasoning.\n"
+            "Evidence boundary: Use only the supplied paper text. No external facts, assumptions, or citations.\n"
+            "Rubric/checklist:\n"
+            "- Accurately identify the core scientific question or review goal.\n"
+            "- Explain practical/scientific importance with evidence-grounded language.\n"
+            "- Capture method-to-result coherence and logical flow of sections and experiments.\n"
+            "- Include bullet points for key results with figure references (for example Figure 1, Figure 2).\n"
+            "- Reflect realistic limitations without speculation.\n"
+            "Output contract: Return strict JSON only.\n"
+            "- For article papers, include keys: key_question_solved, why_important, method, findings_logical_flow, "
+            "key_results_with_figures (array of objects with keys 'figure' and 'result'), limitations, and paper_type.\n"
+            "- For review papers, include keys: key_goal, unsolved_questions, why_important, why_unsolved, and paper_type.\n"
+            "- paper_type must be either 'article' or 'review'.\n"
+            "Defaults/failure policy: If a field cannot be supported by the provided text, return empty strings/arrays "
+            "for that field while preserving required keys.\n\n"
+            f"Title: {title}\n\n"
             f"{paper_text[:10000]}"
         )
         raw = self.client.summarize(prompt, model=self.model)
@@ -928,12 +947,21 @@ class OpenAISummaryAdapter:
 
         return (
             "Generate topic card JSON from all provided person cards and big questions.\n"
-            "Return strict JSON array only (no markdown/no prose).\n"
-            "Each topic card must include: slug, type, topic, related_big_questions, related_people, related_papers.\n"
-            "Set type to \"topic\".\n"
-            "Each related_big_questions entry must include: question, why_important, related_people, related_papers.\n"
-            "Use only person slugs and paper slugs from the input.\n"
-            "related_big_questions must be non-empty and reference the input big questions.\n\n"
+            "Role: You are a senior professor synthesizing coherent research themes from multiple researchers.\n"
+            "Objective: Group related big questions into high-coherence topic cards with traceable provenance.\n"
+            "Evidence boundary: Use only the provided person cards and their big questions.\n"
+            "Rubric/checklist:\n"
+            "- Themes must emerge directly from input big questions.\n"
+            "- Grouping should maximize conceptual coherence.\n"
+            "- Preserve traceable related_people and related_papers links for each grouped question.\n"
+            "- Do not fabricate people, papers, topics, or question content.\n"
+            "Output contract: Return strict JSON array only (no markdown/no prose).\n"
+            "- Each topic card must include: slug, type, topic, related_big_questions, related_people, related_papers.\n"
+            "- Set type to \"topic\".\n"
+            "- Each related_big_questions entry must include: question, why_important, related_people, related_papers.\n"
+            "- Use only person slugs and paper slugs from the input.\n"
+            "- related_big_questions must be non-empty and reference the input big questions.\n"
+            "Defaults/failure policy: If grouping is uncertain, return fewer high-confidence topics instead of inventing data.\n\n"
             f"Input person cards:\n{json.dumps(prompt_people, ensure_ascii=False)}"
         )
 
@@ -948,10 +976,19 @@ class OpenAISummaryAdapter:
             evidence_lines.append(f"- slug: {paper_slug}\n  title: {title}\n  summary: {summary}")
         prompt = (
             "Generate person card JSON for the researcher below.\n"
-            "Return strict JSON object with keys: focus_area (array), big_questions (array of objects).\n"
-            "Each big_questions entry must include non-empty question, why_important, and related_papers.\n"
-            "Set focus_area to [] exactly.\n"
-            f"Each related_papers list must only use linked paper slugs: {json.dumps(linked_papers)}.\n\n"
+            "Role: You are a senior professor synthesizing long-horizon research agendas for an individual researcher.\n"
+            "Objective: Infer high-value scientific big questions grounded in the linked paper evidence.\n"
+            "Evidence boundary: Use only the provided person seed and linked paper evidence.\n"
+            "Rubric/checklist:\n"
+            "- Questions must be specific, scientific, and meaningful over a long-horizon timeline.\n"
+            "- why_important must be strategic, concrete, and evidence-grounded.\n"
+            "- related_papers must reference only linked paper slugs provided below.\n"
+            "- no fabricated papers, entities, or unsupported claims.\n"
+            "Output contract: Return strict JSON object only with keys focus_area (array) and big_questions (array of objects).\n"
+            "- Set focus_area to [] exactly.\n"
+            "- Each big_questions entry must include non-empty question, why_important, and related_papers.\n"
+            f"- Each related_papers list must only use linked paper slugs: {json.dumps(linked_papers)}.\n"
+            "Defaults/failure policy: If uncertain, return fewer high-confidence questions; never invent evidence.\n\n"
             f"Person seed:\n{json.dumps(person_seed, ensure_ascii=False)}\n\n"
             "Linked paper evidence:\n"
             + ("\n".join(evidence_lines) if evidence_lines else "- (none)")
@@ -975,8 +1012,16 @@ class OpenAISummaryAdapter:
         if extracted:
             return extracted
         prompt = (
-            "Extract corresponding author email addresses from the first-page OCR/text below. "
-            "Return JSON array only.\n\n"
+            "Extract corresponding author email addresses from the first-page OCR/text below.\n"
+            "Role: You are an extraction assistant for author contact metadata.\n"
+            "Objective: Extract corresponding author email addresses from first-page OCR/text.\n"
+            "Evidence boundary: Use only the provided first-page text.\n"
+            "Rubric/checklist:\n"
+            "- Return only valid email addresses present in the text.\n"
+            "- Exclude invalid or partial addresses.\n"
+            "- Prefer corresponding-author/contact emails when identifiable.\n"
+            "Output contract: Return strict JSON array only, no prose.\n"
+            "Defaults/failure policy: If no valid email is found, return [].\n\n"
             f"Title: {title}\n\n"
             f"{first_page_text}"
         )

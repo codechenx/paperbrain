@@ -157,7 +157,18 @@ python3 -m pip install -e .
 ```bash
 paperbrain setup \
   --url postgresql://<user>:<pass>@localhost:5432/paperbrain \
-  --openai-api-key $OPENAI_API_KEY
+  --openai-api-key $OPENAI_API_KEY \
+  --summary-model gpt-4.1-mini
+```
+
+For Gemini summary models, pass the Gemini key and a Gemini model name:
+
+```bash
+paperbrain setup \
+  --url postgresql://<user>:<pass>@localhost:5432/paperbrain \
+  --openai-api-key $OPENAI_API_KEY \
+  --gemini-api-key $GEMINI_API_KEY \
+  --summary-model gemini-2.5-flash
 ```
 
 Default config path is:
@@ -169,9 +180,15 @@ Config shape:
 [paperbrain]
 database_url = "postgresql://<user>:<pass>@localhost:5432/paperbrain"
 openai_api_key = "sk-..."
+gemini_api_key = "AIza..."
 summary_model = "gpt-4.1-mini"
 embedding_model = "text-embedding-3-small"
 ```
+
+Summary provider is selected from the summary model prefix:
+
+- `gemini-*` models use Gemini for summaries
+- all other summary models use OpenAI for summaries
 
 ### Initialize schema
 
@@ -191,7 +208,7 @@ paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --for
 
 | Command | Purpose | Key options |
 |---|---|---|
-| `paperbrain setup` | Save config and validate connections | `--url`, `--openai-api-key`, `--summary-model`, `--embedding-model`, `--config-path`, `--test-connections/--no-test-connections` |
+| `paperbrain setup` | Save config and validate connections | `--url`, `--openai-api-key`, `--gemini-api-key`, `--summary-model`, `--embedding-model`, `--config-path`, `--test-connections/--no-test-connections` |
 | `paperbrain init` | Apply DB schema | `--url`, `--force` |
 | `paperbrain ingest PATH` | Parse PDFs and store chunks/embeddings | `--recursive`, `--force-all`, `--config-path` |
 | `paperbrain browse KEYWORD` | Keyword browse card bodies | `--type [paper\|person\|topic\|all]`, `--config-path` |
@@ -209,7 +226,10 @@ paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --for
 
 ```bash
 # 1) Configure
-paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --openai-api-key $OPENAI_API_KEY
+paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --openai-api-key $OPENAI_API_KEY --summary-model gpt-4.1-mini
+
+# 1b) Or use Gemini for summaries
+paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --openai-api-key $OPENAI_API_KEY --gemini-api-key $GEMINI_API_KEY --summary-model gemini-2.5-flash
 
 # 2) Initialize schema
 paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --force

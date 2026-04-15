@@ -15,7 +15,8 @@ except ModuleNotFoundError:  # pragma: no cover - env guard
 from paperbrain.adapters.docling import DoclingParser
 from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
 from paperbrain.adapters.gemini_client import GeminiClient
-from paperbrain.adapters.llm import GeminiSummaryAdapter, LLMAdapter, OpenAISummaryAdapter
+from paperbrain.adapters.llm import GeminiSummaryAdapter, LLMAdapter, OllamaSummaryAdapter, OpenAISummaryAdapter
+from paperbrain.adapters.ollama_client import OllamaCloudClient
 from paperbrain.adapters.openai_client import OpenAIClient
 from paperbrain.config import AppConfig, ConfigStore
 from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_SUMMARY_MODEL
@@ -46,18 +47,38 @@ def _is_gemini_summary_model(summary_model: str) -> bool:
     return summary_model.strip().lower().startswith("gemini-")
 
 
+def _is_ollama_summary_model(summary_model: str) -> bool:
+    return summary_model.strip().lower().startswith("ollama:")
+
+
+def _strip_ollama_model_prefix(summary_model: str) -> str:
+    stripped = summary_model.strip()
+    if not _is_ollama_summary_model(stripped):
+        raise ValueError("Summary model must start with ollama:")
+    model = stripped[len("ollama:") :].strip()
+    if not model:
+        raise ValueError("Ollama summary model must include a model name after 'ollama:'")
+    return model
+
+
 def build_runtime(config_path: Path) -> RuntimeAdapters:
     config = ConfigStore(config_path).load()
     summary_model = config.summary_model
     summary_uses_gemini = _is_gemini_summary_model(summary_model)
+    summary_uses_ollama = _is_ollama_summary_model(summary_model)
     if not config.openai_api_key.strip():
         raise ValueError("OpenAI API key is required for embeddings")
     if summary_uses_gemini and not config.gemini_api_key.strip():
         raise ValueError("Gemini API key is required for Gemini summary models")
+    if summary_uses_ollama and not config.ollama_api_key.strip():
+        raise ValueError("Ollama API key is required for Ollama summary models")
     openai_client = OpenAIClient(api_key=config.openai_api_key)
     if summary_uses_gemini:
         summary_client = GeminiClient(api_key=config.gemini_api_key)
         llm: LLMAdapter = GeminiSummaryAdapter(client=summary_client, model=summary_model)
+    elif summary_uses_ollama:
+        summary_client = OllamaCloudClient(api_key=config.ollama_api_key, base_url=config.ollama_base_url)
+        llm = OllamaSummaryAdapter(client=summary_client, model=_strip_ollama_model_prefix(summary_model))
     else:
         llm = OpenAISummaryAdapter(client=openai_client, model=summary_model)
     return RuntimeAdapters(
@@ -79,6 +100,8 @@ def setup(
     url: str = typer.Option(..., "--url", help="Postgres connection URL"),
     openai_api_key: str | None = typer.Option(None, "--openai-api-key", help="OpenAI API key"),
     gemini_api_key: str | None = typer.Option(None, "--gemini-api-key", help="Gemini API key"),
+    ollama_api_key: str | None = typer.Option(None, "--ollama-api-key", help="Ollama API key"),
+    ollama_base_url: str = typer.Option("https://ollama.com", "--ollama-base-url", help="Ollama base URL"),
     summary_model: str = typer.Option(DEFAULT_SUMMARY_MODEL, "--summary-model"),
     embedding_model: str = typer.Option(DEFAULT_EMBEDDING_MODEL, "--embedding-model"),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
@@ -98,10 +121,16 @@ def setup(
         resolved_gemini_api_key = gemini_api_key.strip()
     else:
         resolved_gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if ollama_api_key is not None:
+        resolved_ollama_api_key = ollama_api_key.strip()
+    else:
+        resolved_ollama_api_key = os.getenv("OLLAMA_API_KEY", "").strip()
     message = run_setup(
         database_url=url,
         openai_api_key=resolved_openai_api_key,
         gemini_api_key=resolved_gemini_api_key,
+        ollama_api_key=resolved_ollama_api_key,
+        ollama_base_url=ollama_base_url,
         summary_model=summary_model,
         embedding_model=embedding_model,
         config_path=config_path,

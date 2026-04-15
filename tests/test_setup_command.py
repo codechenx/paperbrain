@@ -241,6 +241,39 @@ def test_cli_setup_accepts_gemini_api_key(monkeypatch: Any) -> None:
     assert calls["gemini_api_key"] == "gm-test"
 
 
+def test_cli_setup_accepts_ollama_options(monkeypatch: Any) -> None:
+    calls: dict[str, Any] = {}
+
+    def fake_run_setup(**kwargs: Any) -> str:
+        calls.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr("paperbrain.cli.run_setup", fake_run_setup)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "setup",
+            "--url",
+            "postgresql://localhost:5432/paperbrain",
+            "--openai-api-key",
+            "sk-test",
+            "--ollama-api-key",
+            "ol-test",
+            "--ollama-base-url",
+            "https://ollama.example",
+            "--summary-model",
+            "ollama:llama3.2",
+            "--embedding-model",
+            "text-embedding-3-small",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls["ollama_api_key"] == "ol-test"
+    assert calls["ollama_base_url"] == "https://ollama.example"
+
+
 def test_cli_setup_reads_openai_key_from_env(monkeypatch: Any) -> None:
     calls: dict[str, Any] = {}
 
@@ -537,6 +570,31 @@ def test_build_runtime_requires_openai_key_for_openai_summary_model(
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
 
     with pytest.raises(ValueError, match="OpenAI API key is required for embeddings"):
+        build_runtime(config_path)
+
+
+def test_build_runtime_requires_ollama_key_for_ollama_summary_model(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        ollama_api_key="",
+        summary_model="ollama:llama3.1:8b",
+        embedding_model="text-embedding-3-small",
+    )
+    config_path = tmp_path / "config" / "paperbrain.conf"
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            assert path == config_path
+
+        def load(self) -> AppConfig:
+            return config
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+
+    with pytest.raises(ValueError, match="Ollama API key is required for Ollama summary models"):
         build_runtime(config_path)
 
 
@@ -1010,6 +1068,93 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
     assert calls["embedding_client_seen"] is True
     assert calls["gemini_api_key"] == "gm-runtime"
     assert calls["summary_model"] == "gemini-2.5-flash"
+    assert calls["summary_client_seen"] is True
+    assert calls["connect"] == ("postgresql://localhost:5432/paperbrain", False)
+    assert calls["repo"] is fake_repo
+    assert calls["llm_seen"] is True
+    assert calls["run_force_all"] is True
+
+
+def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    calls: dict[str, Any] = {}
+    config_path = tmp_path / "config" / "paperbrain.conf"
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        ollama_api_key="ol-runtime",
+        ollama_base_url="https://ollama.example",
+        summary_model="ollama:llama3.1:8b",
+        embedding_model="text-embedding-3-small",
+    )
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            calls["config_path"] = path
+
+        def load(self) -> AppConfig:
+            return config
+
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            calls["openai_api_key"] = api_key
+
+    class FakeEmbeddingAdapter:
+        def __init__(self, *, client: Any, model: str) -> None:
+            calls["embedding_model"] = model
+            calls["embedding_client_seen"] = isinstance(client, FakeOpenAIClient)
+
+    class FakeOllamaCloudClient:
+        def __init__(self, api_key: str, base_url: str) -> None:
+            calls["ollama_client_args"] = (api_key, base_url)
+
+    class FakeOllamaSummaryAdapter:
+        def __init__(self, *, client: Any, model: str) -> None:
+            calls["summary_model"] = model
+            calls["summary_client_seen"] = isinstance(client, FakeOllamaCloudClient)
+
+    class FakeSummarizeService:
+        def __init__(self, *, repo: Any, llm: Any) -> None:
+            calls["repo"] = repo
+            calls["llm_seen"] = isinstance(llm, FakeOllamaSummaryAdapter)
+
+        def run(self, force_all: bool) -> SummaryStats:
+            calls["run_force_all"] = force_all
+            return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
+
+    @contextmanager
+    def fake_connect(database_url: str, *, autocommit: bool = False) -> Iterator[str]:
+        calls["connect"] = (database_url, autocommit)
+        yield "fake-connection"
+
+    fake_repo = object()
+
+    def fail_openai_summary_adapter(**kwargs: Any) -> None:
+        _ = kwargs
+        pytest.fail("OpenAI summary adapter must not be used for Ollama models")
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.cli.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
+    monkeypatch.setattr("paperbrain.cli.OllamaCloudClient", FakeOllamaCloudClient, raising=False)
+    monkeypatch.setattr("paperbrain.cli.OllamaSummaryAdapter", FakeOllamaSummaryAdapter, raising=False)
+    monkeypatch.setattr("paperbrain.cli.OpenAISummaryAdapter", fail_openai_summary_adapter)
+    monkeypatch.setattr("paperbrain.cli.SummarizeService", FakeSummarizeService)
+    monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
+    monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["summarize", "--force-all", "--config-path", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "Summarized cards: papers=3 people=2 topics=1" in result.output
+    assert calls["config_path"] == config_path
+    assert calls["openai_api_key"] == "sk-runtime"
+    assert calls["embedding_model"] == "text-embedding-3-small"
+    assert calls["embedding_client_seen"] is True
+    assert calls["ollama_client_args"] == ("ol-runtime", "https://ollama.example")
+    assert calls["summary_model"] == "llama3.1:8b"
     assert calls["summary_client_seen"] is True
     assert calls["connect"] == ("postgresql://localhost:5432/paperbrain", False)
     assert calls["repo"] is fake_repo

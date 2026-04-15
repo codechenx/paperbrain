@@ -18,5 +18,6 @@ def test_cli_exposes_core_commands() -> None:
         "lint",
         "stats",
         "export",
+        "web",
     ]:
         assert name in output

@@ -14,7 +14,8 @@ except ModuleNotFoundError:  # pragma: no cover - env guard
 
 from paperbrain.adapters.docling import DoclingParser
 from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
-from paperbrain.adapters.llm import OpenAISummaryAdapter
+from paperbrain.adapters.gemini_client import GeminiClient
+from paperbrain.adapters.llm import GeminiSummaryAdapter, LLMAdapter, OpenAISummaryAdapter
 from paperbrain.adapters.openai_client import OpenAIClient
 from paperbrain.config import AppConfig, ConfigStore
 from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_SUMMARY_MODEL
@@ -38,17 +39,32 @@ class RuntimeAdapters:
     config: AppConfig
     parser: DoclingParser
     embeddings: OpenAIEmbeddingAdapter
-    llm: OpenAISummaryAdapter
+    llm: LLMAdapter
+
+
+def _is_gemini_summary_model(summary_model: str) -> bool:
+    return summary_model.strip().lower().startswith("gemini-")
 
 
 def build_runtime(config_path: Path) -> RuntimeAdapters:
     config = ConfigStore(config_path).load()
-    client = OpenAIClient(api_key=config.openai_api_key)
+    summary_model = config.summary_model
+    summary_uses_gemini = _is_gemini_summary_model(summary_model)
+    if not config.openai_api_key.strip():
+        raise ValueError("OpenAI API key is required for embeddings")
+    if summary_uses_gemini and not config.gemini_api_key.strip():
+        raise ValueError("Gemini API key is required for Gemini summary models")
+    openai_client = OpenAIClient(api_key=config.openai_api_key)
+    if summary_uses_gemini:
+        summary_client = GeminiClient(api_key=config.gemini_api_key)
+        llm: LLMAdapter = GeminiSummaryAdapter(client=summary_client, model=summary_model)
+    else:
+        llm = OpenAISummaryAdapter(client=openai_client, model=summary_model)
     return RuntimeAdapters(
         config=config,
         parser=DoclingParser(),
-        embeddings=OpenAIEmbeddingAdapter(client=client, model=config.embedding_model),
-        llm=OpenAISummaryAdapter(client=client, model=config.summary_model),
+        embeddings=OpenAIEmbeddingAdapter(client=openai_client, model=config.embedding_model),
+        llm=llm,
     )
 
 
@@ -62,13 +78,14 @@ def repo_from_url(database_url: str) -> Iterator[PostgresRepo]:
 def setup(
     url: str = typer.Option(..., "--url", help="Postgres connection URL"),
     openai_api_key: str | None = typer.Option(None, "--openai-api-key", help="OpenAI API key"),
+    gemini_api_key: str | None = typer.Option(None, "--gemini-api-key", help="Gemini API key"),
     summary_model: str = typer.Option(DEFAULT_SUMMARY_MODEL, "--summary-model"),
     embedding_model: str = typer.Option(DEFAULT_EMBEDDING_MODEL, "--embedding-model"),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
     test_connections: bool = typer.Option(
         True,
         "--test-connections/--no-test-connections",
-        help="Validate database and OpenAI connectivity before writing config",
+        help="Validate database, OpenAI embeddings, and provider-aware summary connectivity before writing config",
     ),
 ) -> None:
     if openai_api_key is not None:
@@ -77,9 +94,14 @@ def setup(
         resolved_openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not resolved_openai_api_key and test_connections:
         resolved_openai_api_key = typer.prompt("OpenAI API key", hide_input=True).strip()
+    if gemini_api_key is not None:
+        resolved_gemini_api_key = gemini_api_key.strip()
+    else:
+        resolved_gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
     message = run_setup(
         database_url=url,
         openai_api_key=resolved_openai_api_key,
+        gemini_api_key=resolved_gemini_api_key,
         summary_model=summary_model,
         embedding_model=embedding_model,
         config_path=config_path,

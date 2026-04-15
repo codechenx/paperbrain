@@ -13,6 +13,7 @@ class AppConfig:
     openai_api_key: str
     summary_model: str
     embedding_model: str
+    gemini_api_key: str = ""
 
 
 def validate_embedding_model_for_schema(embedding_model: str) -> None:
@@ -33,6 +34,7 @@ class ConfigStore:
         self,
         database_url: str,
         openai_api_key: str = "",
+        gemini_api_key: str = "",
         summary_model: str = DEFAULT_SUMMARY_MODEL,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     ) -> None:
@@ -42,11 +44,13 @@ class ConfigStore:
             "[paperbrain]\n"
             'database_url = "{database_url}"\n'
             'openai_api_key = "{openai_api_key}"\n'
+            'gemini_api_key = "{gemini_api_key}"\n'
             'summary_model = "{summary_model}"\n'
             'embedding_model = "{embedding_model}"\n'
         ).format(
             database_url=database_url.replace("\\", "\\\\").replace('"', '\\"'),
             openai_api_key=openai_api_key.replace("\\", "\\\\").replace('"', '\\"'),
+            gemini_api_key=gemini_api_key.replace("\\", "\\\\").replace('"', '\\"'),
             summary_model=summary_model.replace("\\", "\\\\").replace('"', '\\"'),
             embedding_model=embedding_model.replace("\\", "\\\\").replace('"', '\\"'),
         )
@@ -66,6 +70,9 @@ class ConfigStore:
         openai_api_key = section.get("openai_api_key", "")
         if not isinstance(openai_api_key, str):
             raise ValueError("Invalid openai_api_key in configuration file")
+        gemini_api_key = section.get("gemini_api_key", "")
+        if not isinstance(gemini_api_key, str):
+            raise ValueError("Invalid gemini_api_key in configuration file")
         summary_model = section.get("summary_model", DEFAULT_SUMMARY_MODEL)
         if not isinstance(summary_model, str):
             raise ValueError("Invalid summary_model in configuration file")
@@ -78,4 +85,5 @@ class ConfigStore:
             openai_api_key=openai_api_key,
             summary_model=summary_model,
             embedding_model=embedding_model,
+            gemini_api_key=gemini_api_key,
         )

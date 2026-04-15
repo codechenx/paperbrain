@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from paperbrain.cli import app
+from paperbrain.cli import app, build_runtime
 from paperbrain.config import AppConfig, ConfigStore
 from paperbrain.models import SummaryStats
 from paperbrain.services.init import run_init
@@ -18,6 +18,7 @@ def test_run_setup_writes_project_config(tmp_path: Path) -> None:
     message = run_setup(
         database_url="postgresql://localhost:5432/paperbrain",
         openai_api_key="sk-test",
+        gemini_api_key="gm-test",
         summary_model="gpt-4.1-mini",
         embedding_model="text-embedding-3-small",
         config_path=config_path,
@@ -27,6 +28,7 @@ def test_run_setup_writes_project_config(tmp_path: Path) -> None:
     loaded = ConfigStore(config_path).load()
     assert loaded.database_url == "postgresql://localhost:5432/paperbrain"
     assert loaded.openai_api_key == "sk-test"
+    assert loaded.gemini_api_key == "gm-test"
     assert loaded.summary_model == "gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
     assert message == f"Saved configuration to {config_path}"
@@ -301,6 +303,47 @@ def test_run_setup_openai_validation_failure_has_context(monkeypatch: Any, tmp_p
         )
 
 
+def test_run_setup_gemini_validation_failure_has_context(monkeypatch: Any, tmp_path: Path) -> None:
+    @contextmanager
+    def fake_connect(database_url: str, *, autocommit: bool = False) -> Iterator[object]:
+        _ = database_url, autocommit
+        yield object()
+
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            _ = api_key
+
+        def embed(self, chunks: list[str], model: str) -> list[list[float]]:
+            _ = chunks, model
+            return [[0.1]]
+
+        def summarize(self, text: str, model: str) -> str:
+            _ = text, model
+            return "ok"
+
+    class FailingGeminiClient:
+        def __init__(self, api_key: str) -> None:
+            if not api_key.strip():
+                raise ValueError("Gemini API key is required when testing connections")
+
+        def summarize(self, text: str, model: str) -> str:
+            _ = text, model
+            raise AssertionError("Gemini summarize must not be reached when the API key is missing")
+
+    monkeypatch.setattr("paperbrain.services.setup.connect", fake_connect)
+    monkeypatch.setattr("paperbrain.services.setup.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.services.setup.GeminiClient", FailingGeminiClient, raising=False)
+
+    with pytest.raises(RuntimeError, match=r"Setup failed during Gemini validation: Gemini API key is required when testing connections"):
+        run_setup(
+            database_url="postgresql://localhost:5432/paperbrain",
+            openai_api_key="sk-test",
+            summary_model="gemini-2.5-flash",
+            config_path=tmp_path / "paperbrain.conf",
+            test_connections=True,
+        )
+
+
 def test_run_setup_rejects_embedding_models_incompatible_with_schema(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="text-embedding-3-small"):
         run_setup(
@@ -310,6 +353,90 @@ def test_run_setup_rejects_embedding_models_incompatible_with_schema(tmp_path: P
             config_path=tmp_path / "paperbrain.conf",
             test_connections=False,
         )
+
+
+def test_build_runtime_requires_gemini_key_for_gemini_summary_model(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        gemini_api_key="",
+        summary_model="gemini-2.5-flash",
+        embedding_model="text-embedding-3-small",
+    )
+    config_path = tmp_path / "config" / "paperbrain.conf"
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            assert path == config_path
+
+        def load(self) -> AppConfig:
+            return config
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+
+    with pytest.raises(ValueError, match="Gemini API key is required for Gemini summary models"):
+        build_runtime(config_path)
+
+
+def test_build_runtime_requires_openai_key_for_gemini_summary_model(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="",
+        gemini_api_key="gm-runtime",
+        summary_model="gemini-2.5-flash",
+        embedding_model="text-embedding-3-small",
+    )
+    config_path = tmp_path / "config" / "paperbrain.conf"
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            assert path == config_path
+
+        def load(self) -> AppConfig:
+            return config
+
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            _ = api_key
+
+    class FakeGeminiClient:
+        def __init__(self, api_key: str) -> None:
+            _ = api_key
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.cli.GeminiClient", FakeGeminiClient, raising=False)
+
+    with pytest.raises(ValueError, match="OpenAI API key is required for embeddings"):
+        build_runtime(config_path)
+
+
+def test_build_runtime_requires_openai_key_for_openai_summary_model(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="",
+        summary_model="gpt-4.1-mini",
+        embedding_model="text-embedding-3-small",
+    )
+    config_path = tmp_path / "config" / "paperbrain.conf"
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            assert path == config_path
+
+        def load(self) -> AppConfig:
+            return config
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+
+    with pytest.raises(ValueError, match="OpenAI API key is required for embeddings"):
+        build_runtime(config_path)
 
 
 def test_run_init_applies_schema_to_database(monkeypatch: Any) -> None:
@@ -696,6 +823,92 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
     assert calls["config_path"] == config_path
     assert calls["api_key"] == "sk-runtime"
     assert calls["summary_model"] == "gpt-4.1-mini"
+    assert calls["summary_client_seen"] is True
+    assert calls["connect"] == ("postgresql://localhost:5432/paperbrain", False)
+    assert calls["repo"] is fake_repo
+    assert calls["llm_seen"] is True
+    assert calls["run_force_all"] is True
+
+
+def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    calls: dict[str, Any] = {}
+    config_path = tmp_path / "config" / "paperbrain.conf"
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        gemini_api_key="gm-runtime",
+        summary_model="gemini-2.5-flash",
+        embedding_model="text-embedding-3-small",
+    )
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            calls["config_path"] = path
+
+        def load(self) -> AppConfig:
+            return config
+
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            calls["openai_api_key"] = api_key
+
+    class FakeEmbeddingAdapter:
+        def __init__(self, *, client: Any, model: str) -> None:
+            calls["embedding_model"] = model
+            calls["embedding_client_seen"] = isinstance(client, FakeOpenAIClient)
+
+    class FakeGeminiClient:
+        def __init__(self, api_key: str) -> None:
+            calls["gemini_api_key"] = api_key
+
+    class FakeGeminiSummaryAdapter:
+        def __init__(self, *, client: Any, model: str) -> None:
+            calls["summary_model"] = model
+            calls["summary_client_seen"] = isinstance(client, FakeGeminiClient)
+
+    class FakeSummarizeService:
+        def __init__(self, *, repo: Any, llm: Any) -> None:
+            calls["repo"] = repo
+            calls["llm_seen"] = isinstance(llm, FakeGeminiSummaryAdapter)
+
+        def run(self, force_all: bool) -> SummaryStats:
+            calls["run_force_all"] = force_all
+            return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
+
+    @contextmanager
+    def fake_connect(database_url: str, *, autocommit: bool = False) -> Iterator[str]:
+        calls["connect"] = (database_url, autocommit)
+        yield "fake-connection"
+
+    fake_repo = object()
+
+    def fail_openai_summary_adapter(**kwargs: Any) -> None:
+        _ = kwargs
+        pytest.fail("OpenAI summary adapter must not be used for Gemini models")
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.cli.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
+    monkeypatch.setattr("paperbrain.cli.GeminiClient", FakeGeminiClient, raising=False)
+    monkeypatch.setattr("paperbrain.cli.GeminiSummaryAdapter", FakeGeminiSummaryAdapter, raising=False)
+    monkeypatch.setattr("paperbrain.cli.OpenAISummaryAdapter", fail_openai_summary_adapter)
+    monkeypatch.setattr("paperbrain.cli.SummarizeService", FakeSummarizeService)
+    monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
+    monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["summarize", "--force-all", "--config-path", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "Summarized cards: papers=3 people=2 topics=1" in result.output
+    assert calls["config_path"] == config_path
+    assert calls["openai_api_key"] == "sk-runtime"
+    assert calls["embedding_model"] == "text-embedding-3-small"
+    assert calls["embedding_client_seen"] is True
+    assert calls["gemini_api_key"] == "gm-runtime"
+    assert calls["summary_model"] == "gemini-2.5-flash"
     assert calls["summary_client_seen"] is True
     assert calls["connect"] == ("postgresql://localhost:5432/paperbrain", False)
     assert calls["repo"] is fake_repo

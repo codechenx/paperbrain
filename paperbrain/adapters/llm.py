@@ -2,7 +2,6 @@ import json
 import re
 from typing import Protocol
 
-from paperbrain.adapters.openai_client import OpenAIClient
 from paperbrain.utils import normalize_email, slugify
 
 
@@ -14,6 +13,11 @@ class LLMAdapter(Protocol):
         ...
 
     def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+        ...
+
+
+class SummaryClient(Protocol):
+    def summarize(self, text: str, model: str) -> str:
         ...
 
 
@@ -79,7 +83,7 @@ def _extract_person_seeds(paper_cards: list[dict]) -> list[dict]:
 
 
 class OpenAISummaryAdapter:
-    def __init__(self, *, client: OpenAIClient, model: str) -> None:
+    def __init__(self, *, client: SummaryClient, model: str) -> None:
         self.client = client
         self.model = model
 
@@ -780,3 +784,7 @@ class OpenAISummaryAdapter:
                 last_error = exc
         detail = f": {last_error}" if last_error else ""
         raise ValueError(f"topic generation failed after 2 attempts{detail}")
+
+
+class GeminiSummaryAdapter(OpenAISummaryAdapter):
+    pass

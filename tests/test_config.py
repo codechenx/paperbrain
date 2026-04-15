@@ -52,6 +52,45 @@ def test_config_stores_ollama_fields(tmp_path: Path) -> None:
     assert loaded.ollama_base_url == "https://ollama.local"
 
 
+def test_save_normalizes_ollama_base_url(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+    store = ConfigStore(config_path)
+    store.save(
+        database_url="postgresql://localhost:5432/paperbrain",
+        ollama_base_url="  https://ollama.local/base  ",
+    )
+
+    loaded = store.load()
+
+    assert loaded.ollama_base_url == "https://ollama.local/base"
+
+
+def test_save_rejects_blank_ollama_base_url(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+    store = ConfigStore(config_path)
+
+    with pytest.raises(ValueError, match="non-empty ollama_base_url"):
+        store.save(
+            database_url="postgresql://localhost:5432/paperbrain",
+            ollama_base_url="   \n\t ",
+        )
+
+
+def test_load_rejects_blank_ollama_base_url(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+    config_path.write_text(
+        (
+            "[paperbrain]\n"
+            'database_url = "postgresql://localhost:5432/paperbrain"\n'
+            'ollama_base_url = "   "\n'
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="non-empty ollama_base_url"):
+        ConfigStore(config_path).load()
+
+
 def test_load_legacy_config_uses_model_defaults(tmp_path: Path) -> None:
     config_path = tmp_path / "paperbrain.conf"
     config_path.write_text(

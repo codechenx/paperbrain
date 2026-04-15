@@ -598,6 +598,42 @@ def test_build_runtime_requires_ollama_key_for_ollama_summary_model(
         build_runtime(config_path)
 
 
+def test_build_runtime_requires_ollama_base_url_for_ollama_summary_model(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        ollama_api_key="ol-runtime",
+        ollama_base_url=" \t ",
+        summary_model="ollama:llama3.1:8b",
+        embedding_model="text-embedding-3-small",
+    )
+    config_path = tmp_path / "config" / "paperbrain.conf"
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            assert path == config_path
+
+        def load(self) -> AppConfig:
+            return config
+
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            _ = api_key
+
+    class FakeOllamaCloudClient:
+        def __init__(self, api_key: str, base_url: str) -> None:
+            _ = api_key, base_url
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.cli.OllamaCloudClient", FakeOllamaCloudClient, raising=False)
+
+    with pytest.raises(ValueError, match="Ollama base URL is required for Ollama summary models"):
+        build_runtime(config_path)
+
+
 def test_build_runtime_rejects_empty_ollama_summary_model_suffix(
     monkeypatch: Any, tmp_path: Path
 ) -> None:

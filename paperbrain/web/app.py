@@ -1,9 +1,13 @@
+from html import escape
 from pathlib import Path
 from typing import Callable, Generator, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request
 
 from paperbrain.cli import DEFAULT_CONFIG_PATH
@@ -12,6 +16,18 @@ from paperbrain.web.repository import WebCardRepository
 
 CardTypeParam = Literal["paper", "person", "topic"]
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
+
+
+def _is_htmx_request(request: Request) -> bool:
+    return request.headers.get("HX-Request", "").lower() == "true"
+
+
+def _render_htmx_error_fragment(message: str) -> str:
+    return (
+        '<div class="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-800">'
+        f"{escape(message)}"
+        "</div>"
+    )
 
 def get_web_repository() -> WebCardRepository:
     try:
@@ -58,6 +74,19 @@ def create_app(
     app = FastAPI(title="PaperBrain Browser")
     templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
     effective_repo_factory = repo_factory or _build_default_repo_factory(config_path)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError) -> HTMLResponse:
+        if not _is_htmx_request(request):
+            return await request_validation_exception_handler(request, exc)
+        return HTMLResponse(_render_htmx_error_fragment("Unable to load cards. Check filters and try again."), status_code=422)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def htmx_http_exception_handler(request: Request, exc: StarletteHTTPException) -> HTMLResponse:
+        if not _is_htmx_request(request) or exc.status_code not in {404, 422}:
+            return await http_exception_handler(request, exc)
+        message = exc.detail if isinstance(exc.detail, str) and exc.detail else "Not Found"
+        return HTMLResponse(_render_htmx_error_fragment(message), status_code=exc.status_code)
 
     def get_request_repository() -> Generator[WebCardRepository, None, None]:
         yield from _repository_dependency(effective_repo_factory)

@@ -7,21 +7,21 @@
     <div class="flex flex-wrap gap-2">
       <a
         class="rounded bg-slate-800 px-3 py-2 text-sm text-white"
-        hx-get="/cards?card_type=paper&page=1&page_size={{ page_size }}&q={{ q }}"
+        hx-get="/cards?card_type=paper&page=1&page_size={{ page_size }}&q={{ q|urlencode }}"
         hx-target="#card-grid"
         hx-swap="outerHTML"
         hx-on::after-request="document.getElementById('active-card-type').value='paper'"
       >Paper</a>
       <a
         class="rounded bg-slate-700 px-3 py-2 text-sm text-white"
-        hx-get="/cards?card_type=person&page=1&page_size={{ page_size }}&q={{ q }}"
+        hx-get="/cards?card_type=person&page=1&page_size={{ page_size }}&q={{ q|urlencode }}"
         hx-target="#card-grid"
         hx-swap="outerHTML"
         hx-on::after-request="document.getElementById('active-card-type').value='person'"
       >Person</a>
       <a
         class="rounded bg-slate-700 px-3 py-2 text-sm text-white"
-        hx-get="/cards?card_type=topic&page=1&page_size={{ page_size }}&q={{ q }}"
+        hx-get="/cards?card_type=topic&page=1&page_size={{ page_size }}&q={{ q|urlencode }}"
         hx-target="#card-grid"
         hx-swap="outerHTML"
         hx-on::after-request="document.getElementById('active-card-type').value='topic'"
@@ -31,6 +31,7 @@
       hx-get="/cards"
       hx-target="#card-grid"
       hx-swap="outerHTML"
+      hx-trigger="input changed delay:300ms, search, submit"
       class="max-w-xl"
     >
       <input id="active-card-type" type="hidden" name="card_type" value="{{ card_type }}" />

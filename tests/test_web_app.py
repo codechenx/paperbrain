@@ -124,7 +124,7 @@ def test_cards_fragment_includes_infinite_scroll_loader_with_next_page(monkeypat
 def test_homepage_renders_tab_wiring_search_and_card_grid(monkeypatch: pytest.MonkeyPatch) -> None:
     client, _ = _build_client(monkeypatch)
 
-    response = client.get("/")
+    response = client.get("/", params={"q": "gene & data"})
 
     assert response.status_code == 200
     body = response.text
@@ -136,6 +136,8 @@ def test_homepage_renders_tab_wiring_search_and_card_grid(monkeypatch: pytest.Mo
     assert "hx-on::after-request=\"document.getElementById('active-card-type').value='paper'\"" in body
     assert "hx-on::after-request=\"document.getElementById('active-card-type').value='person'\"" in body
     assert "hx-on::after-request=\"document.getElementById('active-card-type').value='topic'\"" in body
+    assert "hx-trigger=\"input changed delay:300ms, search, submit\"" in body
+    assert re.search(r'hx-get=["\']/cards\?[^"\']*q=gene(\+|%20)%26(\+|%20)data', body)
     assert re.search(r'<input[^>]+name=["\']q["\']', body)
 
 
@@ -171,3 +173,37 @@ def test_card_detail_returns_404_for_missing_card(monkeypatch: pytest.MonkeyPatc
 
     assert response.status_code == 404
     assert fake_repo.get_card_calls == [{"card_type": "paper", "slug": "missing-card"}]
+
+
+@pytest.mark.parametrize(
+    ("params", "invalid_field"),
+    [
+        ({"card_type": "invalid", "page": 1, "page_size": 24}, "card_type"),
+        ({"card_type": "paper", "page": 0, "page_size": 24}, "page"),
+        ({"card_type": "paper", "page": 1, "page_size": 0}, "page_size"),
+    ],
+)
+def test_cards_invalid_params_return_422_with_htmx_error_fragment(
+    monkeypatch: pytest.MonkeyPatch, params: dict[str, Any], invalid_field: str
+) -> None:
+    client, _ = _build_client(monkeypatch)
+
+    non_htmx_response = client.get("/cards", params=params)
+    assert non_htmx_response.status_code == 422
+    assert non_htmx_response.headers["content-type"].startswith("application/json")
+    assert invalid_field in non_htmx_response.text
+
+    htmx_response = client.get("/cards", params=params, headers={"HX-Request": "true"})
+    assert htmx_response.status_code == 422
+    assert htmx_response.headers["content-type"].startswith("text/html")
+    assert "Unable to load cards" in htmx_response.text
+
+
+def test_card_detail_404_returns_htmx_error_fragment(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, _ = _build_client(monkeypatch)
+
+    response = client.get("/cards/paper/missing-card", headers={"HX-Request": "true"})
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Card not found" in response.text

@@ -62,6 +62,7 @@ def repo_from_url(database_url: str) -> Iterator[PostgresRepo]:
 def setup(
     url: str = typer.Option(..., "--url", help="Postgres connection URL"),
     openai_api_key: str | None = typer.Option(None, "--openai-api-key", help="OpenAI API key"),
+    gemini_api_key: str | None = typer.Option(None, "--gemini-api-key", help="Gemini API key"),
     summary_model: str = typer.Option(DEFAULT_SUMMARY_MODEL, "--summary-model"),
     embedding_model: str = typer.Option(DEFAULT_EMBEDDING_MODEL, "--embedding-model"),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
@@ -77,9 +78,14 @@ def setup(
         resolved_openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not resolved_openai_api_key and test_connections:
         resolved_openai_api_key = typer.prompt("OpenAI API key", hide_input=True).strip()
+    if gemini_api_key is not None:
+        resolved_gemini_api_key = gemini_api_key.strip()
+    else:
+        resolved_gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
     message = run_setup(
         database_url=url,
         openai_api_key=resolved_openai_api_key,
+        gemini_api_key=resolved_gemini_api_key,
         summary_model=summary_model,
         embedding_model=embedding_model,
         config_path=config_path,

@@ -4,6 +4,6 @@
   hx-target="#detail-panel"
   hx-swap="innerHTML"
 >
-  <h3 class="font-semibold">{{ card.title or card.body.title or card.slug }}</h3>
+  <h3 class="font-semibold">{{ card.title or (card.body.title if card.body is mapping else none) or card.slug }}</h3>
   <p class="mt-2 text-sm text-slate-600">{{ card.entity_type or card_type }}</p>
 </article>

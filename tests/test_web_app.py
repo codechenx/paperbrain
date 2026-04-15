@@ -155,6 +155,24 @@ def test_cards_endpoint_returns_grid_fragment_with_detail_route_hx_get(monkeypat
     ]
 
 
+def test_cards_endpoint_uses_slug_title_fallback_when_body_is_not_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, fake_repo = _build_client(monkeypatch)
+    fake_repo.cards = [
+        {
+            "slug": "paper-fallback",
+            "entity_type": "paper",
+            "title": "",
+            "body": "not-a-mapping",
+        }
+    ]
+
+    response = client.get("/cards", params={"card_type": "paper"})
+
+    assert response.status_code == 200
+    assert "<h3 class=\"font-semibold\">paper-fallback</h3>" in response.text
+    assert "built-in method title" not in response.text
+
+
 def test_card_detail_returns_200_and_rendered_content_for_existing_card(monkeypatch: pytest.MonkeyPatch) -> None:
     client, fake_repo = _build_client(monkeypatch)
 
@@ -173,6 +191,24 @@ def test_card_detail_returns_404_for_missing_card(monkeypatch: pytest.MonkeyPatc
 
     assert response.status_code == 404
     assert fake_repo.get_card_calls == [{"card_type": "paper", "slug": "missing-card"}]
+
+
+def test_card_detail_returns_404_for_unknown_card_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, fake_repo = _build_client(monkeypatch)
+
+    response = client.get("/cards/unknown/paper-1")
+
+    assert response.status_code == 404
+    assert fake_repo.get_card_calls == []
+
+
+def test_card_detail_returns_404_for_missing_card_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, fake_repo = _build_client(monkeypatch)
+
+    response = client.get("/cards/paper/")
+
+    assert response.status_code == 404
+    assert fake_repo.get_card_calls == []
 
 
 @pytest.mark.parametrize(

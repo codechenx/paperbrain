@@ -15,6 +15,7 @@ from paperbrain.config import ConfigStore
 from paperbrain.web.repository import WebCardRepository
 
 CardTypeParam = Literal["paper", "person", "topic"]
+VALID_CARD_TYPES = frozenset(("paper", "person", "topic"))
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 
 
@@ -141,10 +142,14 @@ def create_app(
     @app.get("/cards/{card_type}/{card_id:path}", response_class=HTMLResponse)
     def card_detail(
         request: Request,
-        card_type: CardTypeParam,
+        card_type: str,
         card_id: str,
         repo: WebCardRepository = Depends(get_request_repository),
     ) -> HTMLResponse:
+        if card_type not in VALID_CARD_TYPES:
+            raise HTTPException(status_code=404, detail="Card type not found")
+        if not card_id:
+            raise HTTPException(status_code=404, detail="Card not found")
         card = repo.get_card(card_type=card_type, slug=card_id)
         if card is None:
             raise HTTPException(status_code=404, detail="Card not found")

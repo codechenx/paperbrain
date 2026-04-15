@@ -132,6 +132,10 @@ def test_homepage_renders_tab_wiring_search_and_card_grid(monkeypatch: pytest.Mo
     assert re.search(r'hx-get=["\']/cards\?[^"\']*card_type=paper', body)
     assert re.search(r'hx-get=["\']/cards\?[^"\']*card_type=person', body)
     assert re.search(r'hx-get=["\']/cards\?[^"\']*card_type=topic', body)
+    assert re.search(r'<input[^>]+id=["\']active-card-type["\'][^>]+name=["\']card_type["\']', body)
+    assert "hx-on::after-request=\"document.getElementById('active-card-type').value='paper'\"" in body
+    assert "hx-on::after-request=\"document.getElementById('active-card-type').value='person'\"" in body
+    assert "hx-on::after-request=\"document.getElementById('active-card-type').value='topic'\"" in body
     assert re.search(r'<input[^>]+name=["\']q["\']', body)
 
 

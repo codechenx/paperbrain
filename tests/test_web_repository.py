@@ -92,7 +92,7 @@ def test_list_cards_filters_by_type_and_query_and_returns_has_more() -> None:
     assert "OFFSET" in normalized_sql
     assert params is not None
     assert "paper" not in params
-    assert params.count("%genomics%") >= 1
+    assert params.count("%genomics%") == 2
     assert params[-2:] == (expected_limit, expected_offset)
 
 

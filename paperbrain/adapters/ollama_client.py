@@ -8,10 +8,13 @@ class OllamaCloudClient:
         if sdk_client is None:
             import ollama
 
-            client_kwargs: dict[str, Any] = {"host": base_url}
-            if api_key:
-                client_kwargs["headers"] = {"Authorization": f"Bearer {api_key}"}
-            sdk_client = ollama.Client(**client_kwargs)
+            normalized_api_key = api_key.strip()
+            headers = (
+                {"Authorization": f"Bearer {normalized_api_key}"}
+                if normalized_api_key
+                else None
+            )
+            sdk_client = ollama.Client(host=base_url, headers=headers)
         self.sdk_client = sdk_client
 
     def summarize(self, text: str, model: str) -> str:
@@ -22,4 +25,4 @@ class OllamaCloudClient:
         content = getattr(message, "content", None)
         if content is None:
             return ""
-        return content.strip()
+        return str(content).strip()

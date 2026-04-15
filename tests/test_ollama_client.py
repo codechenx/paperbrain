@@ -71,6 +71,24 @@ def test_ollama_client_summarize_coerces_non_string_content() -> None:
     assert summary == "123"
 
 
+def test_ollama_client_summarize_wraps_sdk_failures_with_ollama_context() -> None:
+    from paperbrain.adapters.ollama_client import OllamaCloudClient
+
+    class SDKBoomError(Exception):
+        pass
+
+    class FakeSDKClient:
+        def chat(self, *, model: str, messages: list[dict[str, str]]) -> SimpleNamespace:
+            raise SDKBoomError("network timeout")
+
+    client = OllamaCloudClient(api_key="ol-test", base_url="https://ollama.example", sdk_client=FakeSDKClient())
+
+    with pytest.raises(RuntimeError, match="Ollama summarize failed") as exc_info:
+        client.summarize("paper text", model="qwen2.5")
+
+    assert isinstance(exc_info.value.__cause__, SDKBoomError)
+
+
 def test_ollama_client_constructor_sets_auth_header_for_non_empty_key(monkeypatch: pytest.MonkeyPatch) -> None:
     from paperbrain.adapters.ollama_client import OllamaCloudClient
 

@@ -18,9 +18,12 @@ class OllamaCloudClient:
         self.sdk_client = sdk_client
 
     def summarize(self, text: str, model: str) -> str:
-        response = self.sdk_client.chat(
-            model=model, messages=[{"role": "user", "content": text}]
-        )
+        try:
+            response = self.sdk_client.chat(
+                model=model, messages=[{"role": "user", "content": text}]
+            )
+        except Exception as exc:
+            raise RuntimeError(f"Ollama summarize failed for model '{model}'") from exc
         message = getattr(response, "message", None)
         content = getattr(message, "content", None)
         if content is None:

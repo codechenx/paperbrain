@@ -195,7 +195,8 @@ def web(
     from paperbrain.web import app as web_app
 
     if uvicorn is None:  # pragma: no cover - env guard
-        raise RuntimeError("uvicorn is required to run the web server")
+        typer.echo("uvicorn is required to run the web server", err=True)
+        raise typer.Exit(code=1)
 
     def app_factory() -> object:
         return web_app.create_app(config_path=config_path)

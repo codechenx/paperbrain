@@ -72,3 +72,13 @@ def test_cli_web_forwards_explicit_options_and_prints_url(monkeypatch: Any, tmp_
     call["app_factory"]()
     assert app_factory_calls == [{"config_path": config_path}]
     assert "http://0.0.0.0:9001" in result.output
+
+
+def test_cli_web_reports_missing_uvicorn(monkeypatch: Any) -> None:
+    monkeypatch.setattr(cli, "uvicorn", None, raising=False)
+
+    result = CliRunner().invoke(app, ["web"])
+
+    assert result.exit_code == 1
+    assert "uvicorn is required to run the web server" in result.output
+    assert "Traceback" not in result.output

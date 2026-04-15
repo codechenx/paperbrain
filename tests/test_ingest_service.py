@@ -333,3 +333,108 @@ The discussion ends here.
     assert references_heading not in parsed.full_text
     assert "[1] Example, A. et al. 2021." not in parsed.full_text
     assert "[2] Example, B. et al. 2022." not in parsed.full_text
+
+
+@pytest.mark.parametrize(
+    "back_matter_heading",
+    [
+        "## Author contributions",
+        "## Acknowledgements",
+        "## Competing interests",
+    ],
+)
+def test_docling_parser_trims_additional_back_matter_sections(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, back_matter_heading: str
+) -> None:
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+
+    markdown = f"""
+# Main Findings
+This section should remain.
+The discussion ends here.
+
+{back_matter_heading}
+Section body should be removed.
+Trailing content should also be removed.
+"""
+
+    class FakeDocument:
+        title = "Back Matter Trim Test"
+        metadata = {}
+
+        def export_to_markdown(self) -> str:
+            return markdown
+
+    class FakeConverter:
+        def convert(self, path: str):  # noqa: ANN201
+            _ = path
+            return types.SimpleNamespace(document=FakeDocument())
+
+    module = types.ModuleType("docling.document_converter")
+    module.DocumentConverter = FakeConverter
+    monkeypatch.setitem(sys.modules, "docling", types.ModuleType("docling"))
+    monkeypatch.setitem(sys.modules, "docling.document_converter", module)
+
+    parsed = DoclingParser().parse_pdf(pdf_path)
+
+    assert "This section should remain." in parsed.full_text
+    assert "The discussion ends here." in parsed.full_text
+    assert back_matter_heading not in parsed.full_text
+    assert "Section body should be removed." not in parsed.full_text
+    assert "Trailing content should also be removed." not in parsed.full_text
+
+
+@pytest.mark.parametrize(
+    ("first_back_matter_heading", "second_back_matter_heading"),
+    [
+        ("## Acknowledgements", "## References"),
+        ("## References", "## Competing interests"),
+    ],
+)
+def test_docling_parser_trims_from_earliest_back_matter_heading(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    first_back_matter_heading: str,
+    second_back_matter_heading: str,
+) -> None:
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+
+    markdown = f"""
+# Main Findings
+This section should remain.
+The discussion ends here.
+
+{first_back_matter_heading}
+First back-matter section body.
+
+{second_back_matter_heading}
+Second back-matter section body.
+"""
+
+    class FakeDocument:
+        title = "Earliest Back Matter Trim Test"
+        metadata = {}
+
+        def export_to_markdown(self) -> str:
+            return markdown
+
+    class FakeConverter:
+        def convert(self, path: str):  # noqa: ANN201
+            _ = path
+            return types.SimpleNamespace(document=FakeDocument())
+
+    module = types.ModuleType("docling.document_converter")
+    module.DocumentConverter = FakeConverter
+    monkeypatch.setitem(sys.modules, "docling", types.ModuleType("docling"))
+    monkeypatch.setitem(sys.modules, "docling.document_converter", module)
+
+    parsed = DoclingParser().parse_pdf(pdf_path)
+
+    assert "This section should remain." in parsed.full_text
+    assert "The discussion ends here." in parsed.full_text
+    assert first_back_matter_heading not in parsed.full_text
+    assert second_back_matter_heading not in parsed.full_text
+    assert "First back-matter section body." not in parsed.full_text
+    assert "Second back-matter section body." not in parsed.full_text

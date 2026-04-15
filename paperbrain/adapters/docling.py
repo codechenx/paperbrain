@@ -27,12 +27,16 @@ class DoclingParser:
 
     @staticmethod
     def _trim_references_section(markdown_content: str) -> str:
+        back_matter_heading_pattern = (
+            r"(?:references|bibliography|works[ \t]+cited|author[ \t]+contributions|"
+            r"acknowledgements|competing[ \t]+interests)"
+        )
         atx_heading = re.search(
-            r"(?im)^[ \t]{0,3}(?:#{1,6}[ \t]+)?(?:references|bibliography|works[ \t]+cited)[ \t]*$",
+            rf"(?im)^[ \t]{{0,3}}(?:#{{1,6}}[ \t]+)?{back_matter_heading_pattern}[ \t]*$",
             markdown_content,
         )
         setext_heading = re.search(
-            r"(?im)^[ \t]*(?:references|bibliography|works[ \t]+cited)[ \t]*\n[ \t]*[-=]{2,}[ \t]*$",
+            rf"(?im)^[ \t]*{back_matter_heading_pattern}[ \t]*\n[ \t]*[-=]{{2,}}[ \t]*$",
             markdown_content,
         )
         starts = [match.start() for match in (atx_heading, setext_heading) if match]

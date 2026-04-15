@@ -16,6 +16,9 @@ def test_schema_sql_contains_card_search_indexes() -> None:
     assert "idx_paper_cards_body_trgm" in SCHEMA_SQL
     assert "idx_person_cards_body_trgm" in SCHEMA_SQL
     assert "idx_topic_cards_body_trgm" in SCHEMA_SQL
+    assert "idx_paper_cards_slug_trgm" in SCHEMA_SQL
+    assert "idx_person_cards_slug_trgm" in SCHEMA_SQL
+    assert "idx_topic_cards_slug_trgm" in SCHEMA_SQL
 
 
 def test_schema_statements_include_link_tables() -> None:

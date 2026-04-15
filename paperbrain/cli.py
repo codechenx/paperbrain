@@ -7,6 +7,11 @@ from typing import Iterator
 
 import typer
 
+try:
+    import uvicorn
+except ModuleNotFoundError:  # pragma: no cover - env guard
+    uvicorn = None  # type: ignore[assignment]
+
 from paperbrain.adapters.docling import DoclingParser
 from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
 from paperbrain.adapters.llm import OpenAISummaryAdapter
@@ -178,3 +183,23 @@ def export(
         f"Exported {stats.files_written} files (papers={stats.papers} people={stats.people} topics={stats.topics}) "
         f"to {output_dir}"
     )
+
+
+@app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(8000, "--port"),
+    reload: bool = typer.Option(False, "--reload/--no-reload"),
+    config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
+) -> None:
+    from paperbrain.web import app as web_app
+
+    if uvicorn is None:  # pragma: no cover - env guard
+        typer.echo("uvicorn is required to run the web server", err=True)
+        raise typer.Exit(code=1)
+
+    def app_factory() -> object:
+        return web_app.create_app(config_path=config_path)
+
+    typer.echo(f"http://{host}:{port}")
+    uvicorn.run(app_factory, host=host, port=port, reload=reload, factory=True)

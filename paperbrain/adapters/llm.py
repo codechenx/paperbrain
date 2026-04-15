@@ -140,6 +140,22 @@ class OpenAISummaryAdapter:
         return output
 
     @staticmethod
+    def _normalize_corresponding_author(value: object) -> str:
+        raw = str(value).strip()
+        if not raw:
+            return ""
+        match = re.match(r"^\s*(.*?)\s*<\s*([^>]+)\s*>\s*$", raw)
+        if match:
+            name = match.group(1).strip()
+            email = normalize_email(match.group(2))
+            if email:
+                return f"{name} <{email}>" if name else email
+        email = normalize_email(raw)
+        if email:
+            return email
+        return raw
+
+    @staticmethod
     def _normalize_title(value: object) -> str:
         if not isinstance(value, str):
             return ""
@@ -249,12 +265,13 @@ class OpenAISummaryAdapter:
             "- Authors must be actual author names found in the provided page text.\n"
             "- Journal must be the publication venue stated in the text.\n"
             "- Year must be the publication year as an integer.\n"
-            "- Corresponding authors must be email addresses or identifiers explicitly present in the provided text.\n"
+            "- Corresponding authors must be explicitly present in the provided text.\n"
+            "- When both a corresponding author name and email are present, format as Name <email>; if only email is available, return the plain email string.\n"
             "Output contract: Return strict JSON object only with keys title (string), authors (array of strings), "
             "journal (string), year (integer), corresponding_authors (array of strings).\n"
             "Defaults/failure policy: If unknown, use title=\"\", authors=[], journal=\"\", year=0, corresponding_authors=[].\n\n"
             f"Seed title: {title}\n\n"
-            f"{first_two_pages_text[:8000]}"
+            f"{first_two_pages_text[:5000]}"
         )
         raw = self.client.summarize(prompt, model=self.model)
         parsed = self._extract_json_object(raw)
@@ -287,7 +304,7 @@ class OpenAISummaryAdapter:
             "Defaults/failure policy: If a field cannot be supported by the provided text, return empty strings/arrays "
             "for that field while preserving required keys.\n\n"
             f"Title: {title}\n\n"
-            f"{paper_text[:10000]}"
+            f"{paper_text}"
         )
         raw = self.client.summarize(prompt, model=self.model)
         parsed = self._extract_json_object(raw)
@@ -709,13 +726,16 @@ class OpenAISummaryAdapter:
         if paper_type not in {"article", "review"}:
             paper_type = "review" if "review" in seed_title.casefold() else "article"
 
-        inferred = self._infer_bibliographic_fields(title=seed_title, first_two_pages_text=paper_text[:8000])
+        inferred = self._infer_bibliographic_fields(title=seed_title, first_two_pages_text=paper_text[:5000])
         title = self._normalize_title(inferred.get("title")) or seed_title or "Untitled"
         authors = self._as_string_list(inferred.get("authors")) or []
         journal = str(inferred.get("journal", "")).strip() or "Unknown"
         year = self._coerce_year(inferred.get("year"))
         corresponding_authors = self._merge_unique(
-            [normalize_email(author) or str(author).strip() for author in self._as_string_list(inferred.get("corresponding_authors"))]
+            [
+                self._normalize_corresponding_author(author)
+                for author in self._as_string_list(inferred.get("corresponding_authors"))
+            ]
         )
 
         summary, paper_type = self._build_summary(title=title, paper_type=paper_type, paper_text=paper_text)

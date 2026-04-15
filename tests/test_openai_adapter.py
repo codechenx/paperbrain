@@ -462,12 +462,12 @@ def test_openai_summary_adapter_preserves_person_topic_derivation() -> None:
     assert paper_card["journal"] == "Unknown"
     assert paper_card["year"] == 0
     assert paper_card["summary"].startswith("Key question solved:")
-    assert paper_card["corresponding_authors"] == ["alice@example.org"]
+    assert paper_card["corresponding_authors"] == ["Alice Example <alice@example.org>"]
     assert person_cards == [
         {
             "slug": "people/alice-example-org",
             "type": "person",
-            "name": "alice",
+            "name": "Alice Example",
             "email": "alice@example.org",
             "affiliation": "example.org",
             "focus_area": [],
@@ -525,7 +525,9 @@ def test_openai_summary_adapter_extracts_title_and_metadata_first_from_two_page_
 
     client = MetadataFirstClient()
     adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
-    paper_text = "page-1\n" + ("x" * 9000) + "\nTAIL-MARKER-SHOULD-NOT-BE-IN-METADATA-PROMPT"
+    metadata_overflow_marker = "METADATA-OVERFLOW-MARKER"
+    full_text_summary_marker = "SUMMARY-FULLTEXT-MARKER"
+    paper_text = ("x" * 5000) + metadata_overflow_marker + ("x" * 5100) + full_text_summary_marker + ("x" * 300)
 
     card = adapter.summarize_paper(paper_text, {"slug": "papers/test-paper", "title": "Original Title"})
 
@@ -534,11 +536,19 @@ def test_openai_summary_adapter_extracts_title_and_metadata_first_from_two_page_
     assert card["journal"] == "Nature"
     assert card["year"] == 2025
     assert card["corresponding_authors"] == ["author@example.org"]
-    assert client.summary_calls[0]["text"].startswith("Extract bibliographic metadata from the first-two-pages OCR/text")
-    assert "title (string)" in client.summary_calls[0]["text"]
-    assert "corresponding_authors (array of strings)" in client.summary_calls[0]["text"]
-    assert "TAIL-MARKER-SHOULD-NOT-BE-IN-METADATA-PROMPT" not in client.summary_calls[0]["text"]
-    assert client.summary_calls[1]["text"].startswith("Create a concise structured summary of the paper")
+    metadata_prompt = client.summary_calls[0]["text"]
+    summary_prompt = client.summary_calls[1]["text"]
+    assert metadata_prompt.startswith("Extract bibliographic metadata from the first-two-pages OCR/text")
+    assert "title (string)" in metadata_prompt
+    assert "corresponding_authors (array of strings)" in metadata_prompt
+    assert (
+        "When both a corresponding author name and email are present, format as Name <email>; "
+        "if only email is available, return the plain email string." in metadata_prompt
+    )
+    assert metadata_overflow_marker not in metadata_prompt
+    assert full_text_summary_marker not in metadata_prompt
+    assert summary_prompt.startswith("Create a concise structured summary of the paper")
+    assert full_text_summary_marker in summary_prompt
 
 
 def test_openai_summary_adapter_uses_defaults_without_heuristic_metadata_fallback() -> None:

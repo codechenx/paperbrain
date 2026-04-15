@@ -9,6 +9,7 @@ else:
     Connection = Any
 
 _VALID_CARD_TYPES = {"paper", "person", "topic"}
+_MAX_QUERY_LENGTH = 500
 
 
 class WebCardRepository:
@@ -25,8 +26,10 @@ class WebCardRepository:
         self._validate_card_type(card_type)
         self._validate_page(page)
         self._validate_page_size(page_size)
+        normalized_query = query.strip()
+        self._validate_query(normalized_query)
 
-        normalized = CardListQuery(card_type=card_type, query=query.strip(), page=page, page_size=page_size)
+        normalized = CardListQuery(card_type=card_type, query=normalized_query, page=page, page_size=page_size)
         pattern = f"%{normalized.query}%"
         limit = normalized.page_size + 1
         offset = (normalized.page - 1) * normalized.page_size
@@ -70,6 +73,11 @@ class WebCardRepository:
     def _validate_page_size(page_size: int) -> None:
         if page_size < 1 or page_size > 100:
             raise ValueError("page_size must be between 1 and 100")
+
+    @staticmethod
+    def _validate_query(query: str) -> None:
+        if len(query) > _MAX_QUERY_LENGTH:
+            raise ValueError("query must be <= 500 characters")
 
     @staticmethod
     def _list_sql(card_type: str) -> str:

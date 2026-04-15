@@ -106,6 +106,29 @@ def test_list_cards_rejects_invalid_card_type() -> None:
     assert connection.executed == []
 
 
+def test_list_cards_allows_empty_query() -> None:
+    connection = FakeConnection(rows=[("papers/example", "paper", '{"title": "Example"}', "2024-01-01 00:00:00+00")])
+    repo = WebCardRepository(connection)
+
+    cards, has_more = repo.list_cards(card_type="paper", query="   ", page=1, page_size=10)
+
+    assert has_more is False
+    assert len(cards) == 1
+    assert len(connection.executed) == 1
+    _sql, params = connection.executed[0]
+    assert params == ("%%", "%%", 11, 0)
+
+
+def test_list_cards_rejects_over_limit_query_length() -> None:
+    connection = FakeConnection()
+    repo = WebCardRepository(connection)
+
+    with pytest.raises(ValueError, match="query must be <= 500 characters"):
+        repo.list_cards(card_type="paper", query="a" * 501, page=1, page_size=20)
+
+    assert connection.executed == []
+
+
 def test_get_card_returns_none_for_missing_slug() -> None:
     connection = FakeConnection(row=None)
     repo = WebCardRepository(connection)

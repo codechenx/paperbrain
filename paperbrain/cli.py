@@ -48,9 +48,15 @@ def _is_gemini_summary_model(summary_model: str) -> bool:
 
 def build_runtime(config_path: Path) -> RuntimeAdapters:
     config = ConfigStore(config_path).load()
-    openai_client = OpenAIClient(api_key=config.openai_api_key)
     summary_model = config.summary_model
-    if _is_gemini_summary_model(summary_model):
+    summary_uses_gemini = _is_gemini_summary_model(summary_model)
+    if summary_uses_gemini:
+        if not config.gemini_api_key.strip():
+            raise ValueError("Gemini API key is required for Gemini summary models")
+    elif not config.openai_api_key.strip():
+        raise ValueError("OpenAI API key is required for non-Gemini summary models")
+    openai_client = OpenAIClient(api_key=config.openai_api_key)
+    if summary_uses_gemini:
         summary_client = GeminiClient(api_key=config.gemini_api_key)
         llm: LLMAdapter = GeminiSummaryAdapter(client=summary_client, model=summary_model)
     else:
@@ -80,7 +86,7 @@ def setup(
     test_connections: bool = typer.Option(
         True,
         "--test-connections/--no-test-connections",
-        help="Validate database and OpenAI connectivity before writing config",
+        help="Validate database, OpenAI embeddings, and provider-aware summary connectivity before writing config",
     ),
 ) -> None:
     if openai_api_key is not None:

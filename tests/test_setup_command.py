@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from paperbrain.cli import app
+from paperbrain.cli import app, build_runtime
 from paperbrain.config import AppConfig, ConfigStore
 from paperbrain.models import SummaryStats
 from paperbrain.services.init import run_init
@@ -353,6 +353,55 @@ def test_run_setup_rejects_embedding_models_incompatible_with_schema(tmp_path: P
             config_path=tmp_path / "paperbrain.conf",
             test_connections=False,
         )
+
+
+def test_build_runtime_requires_gemini_key_for_gemini_summary_model(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        gemini_api_key="",
+        summary_model="gemini-2.5-flash",
+        embedding_model="text-embedding-3-small",
+    )
+    config_path = tmp_path / "config" / "paperbrain.conf"
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            assert path == config_path
+
+        def load(self) -> AppConfig:
+            return config
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+
+    with pytest.raises(ValueError, match="Gemini API key is required for Gemini summary models"):
+        build_runtime(config_path)
+
+
+def test_build_runtime_requires_openai_key_for_openai_summary_model(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="",
+        summary_model="gpt-4.1-mini",
+        embedding_model="text-embedding-3-small",
+    )
+    config_path = tmp_path / "config" / "paperbrain.conf"
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            assert path == config_path
+
+        def load(self) -> AppConfig:
+            return config
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+
+    with pytest.raises(ValueError, match="OpenAI API key is required for non-Gemini summary models"):
+        build_runtime(config_path)
 
 
 def test_run_init_applies_schema_to_database(monkeypatch: Any) -> None:

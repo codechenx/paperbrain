@@ -4,7 +4,7 @@ PaperBrain is a Python CLI for building a local scientific knowledge base from P
 It uses:
 - **PostgreSQL + pgvector** for storage and hybrid retrieval
 - **Docling** for PDF parsing/OCR
-- **OpenAI** for embeddings and card generation
+- **OpenAI** for embeddings and provider-selected summaries
 - **Markdown export** for Obsidian-style linked notes
 
 ---
@@ -55,7 +55,8 @@ PaperBrain focuses on a **question-centric workflow**:
                      │ paperbrain summarize [--force-all]
                      ▼
       ┌─────────────────────────────────────────────────────────────┐
-      │ OpenAI summarization + deterministic post-processing        │
+      │ Provider-selected summarization (OpenAI/Gemini) +           │
+      │ deterministic post-processing                               │
       │ - question-centered paper cards (Q/reasoning/evidence/lim)  │
       │ - person cards from corresponding-author big questions       │
       │ - topic cards from cross-person big-question themes          │

@@ -62,8 +62,8 @@ def _card_value(card: Any, field: str) -> Any:
 def test_list_cards_filters_by_type_and_query_and_returns_has_more() -> None:
     connection = FakeConnection(
         rows=[
-            ("papers/example", "paper", "Example Title"),
-            ("papers/overflow", "paper", "Overflow Title"),
+            ("papers/example", "paper", "Example abstract", 100),
+            ("papers/overflow", "paper", "Overflow abstract", 99),
         ]
     )
     repo = WebCardRepository(connection)
@@ -73,19 +73,21 @@ def test_list_cards_filters_by_type_and_query_and_returns_has_more() -> None:
     assert has_more is True
     assert len(cards) == 1
     assert _card_value(cards[0], "slug") == "papers/example"
-    assert _card_value(cards[0], "card_type") == "paper"
-    assert _card_value(cards[0], "title") == "Example Title"
+    assert _card_value(cards[0], "entity_type") == "paper"
+    assert _card_value(cards[0], "body") == "Example abstract"
+    assert _card_value(cards[0], "sort_value") == 100
 
     assert len(connection.executed) == 1
     sql, params = connection.executed[0]
     normalized_sql = _normalize_sql(sql)
     assert "WHERE" in normalized_sql
-    assert "card_type = %s" in normalized_sql
+    assert "FROM paper_cards" in normalized_sql
+    assert "card_type = %s" not in normalized_sql
     assert "ILIKE" in normalized_sql
     assert "LIMIT" in normalized_sql
     assert "OFFSET" in normalized_sql
     assert params is not None
-    assert params[0] == "paper"
+    assert "paper" not in params
     assert params.count("%genomics%") >= 1
 
 
@@ -108,5 +110,7 @@ def test_get_card_returns_none_for_missing_slug() -> None:
     assert card is None
     assert len(connection.executed) == 1
     sql, params = connection.executed[0]
-    assert "WHERE" in _normalize_sql(sql)
-    assert params == ("paper", "papers/missing")
+    normalized_sql = _normalize_sql(sql)
+    assert "FROM paper_cards" in normalized_sql
+    assert "WHERE" in normalized_sql
+    assert params == ("papers/missing",)

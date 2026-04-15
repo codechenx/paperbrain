@@ -11,4 +11,7 @@ class GeminiClient:
 
     def summarize(self, text: str, model: str) -> str:
         response = self.sdk_client.models.generate_content(model=model, contents=text)
-        return response.text.strip()
+        response_text = getattr(response, "text", None)
+        if response_text is None:
+            return ""
+        return response_text.strip()

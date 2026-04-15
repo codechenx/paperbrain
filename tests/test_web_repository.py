@@ -66,8 +66,8 @@ def test_list_cards_filters_by_type_and_query_and_returns_has_more() -> None:
     expected_offset = (page - 1) * page_size
     connection = FakeConnection(
         rows=[
-            ("papers/example", "paper", '{"abstract": "Example abstract"}', 100),
-            ("papers/overflow", "paper", '{"abstract": "Overflow abstract"}', 99),
+            ("papers/example", "paper", '{"abstract": "Example abstract"}', "2024-02-03 04:05:06+00"),
+            ("papers/overflow", "paper", '{"abstract": "Overflow abstract"}', "2024-02-02 04:05:06+00"),
         ]
     )
     repo = WebCardRepository(connection)
@@ -79,7 +79,7 @@ def test_list_cards_filters_by_type_and_query_and_returns_has_more() -> None:
     assert _card_value(cards[0], "slug") == "papers/example"
     assert _card_value(cards[0], "entity_type") == "paper"
     assert _card_value(cards[0], "body") == {"abstract": "Example abstract"}
-    assert _card_value(cards[0], "sort_value") == 100
+    assert _card_value(cards[0], "sort_value") == "2024-02-03 04:05:06+00"
 
     assert len(connection.executed) == 1
     sql, params = connection.executed[0]
@@ -135,6 +135,55 @@ def test_get_card_returns_decoded_payload_with_top_level_defaults() -> None:
         "title": "Example Paper",
         "year": 2024,
     }
+
+
+def test_list_cards_person_routes_to_person_cards_and_decodes_payload() -> None:
+    connection = FakeConnection(
+        rows=[
+            ("people/jane-doe", "person", '{"name": "Jane Doe"}', "people/jane-doe"),
+        ]
+    )
+    repo = WebCardRepository(connection)
+
+    cards, has_more = repo.list_cards(card_type="person", query="jane", page=1, page_size=10)
+
+    assert has_more is False
+    assert len(cards) == 1
+    assert _card_value(cards[0], "slug") == "people/jane-doe"
+    assert _card_value(cards[0], "entity_type") == "person"
+    assert _card_value(cards[0], "body") == {"name": "Jane Doe"}
+    assert _card_value(cards[0], "sort_value") == "people/jane-doe"
+
+    assert len(connection.executed) == 1
+    sql, params = connection.executed[0]
+    normalized_sql = _normalize_sql(sql)
+    assert "FROM person_cards" in normalized_sql
+    assert "FROM paper_cards" not in normalized_sql
+    assert "FROM topic_cards" not in normalized_sql
+    assert "ORDER BY slug" in normalized_sql
+    assert params == ("%jane%", "%jane%", 11, 0)
+
+
+def test_get_card_topic_routes_and_applies_payload_defaults() -> None:
+    connection = FakeConnection(
+        row=("topics/ml", "topic", '{"title": "Machine Learning"}', "topics/ml")
+    )
+    repo = WebCardRepository(connection)
+
+    card = repo.get_card(card_type="topic", slug="topics/ml")
+
+    assert card == {
+        "slug": "topics/ml",
+        "entity_type": "topic",
+        "title": "Machine Learning",
+    }
+    assert len(connection.executed) == 1
+    sql, params = connection.executed[0]
+    normalized_sql = _normalize_sql(sql)
+    assert "FROM topic_cards" in normalized_sql
+    assert "FROM paper_cards" not in normalized_sql
+    assert "FROM person_cards" not in normalized_sql
+    assert params == ("topics/ml",)
 
 
 def test_list_cards_rejects_invalid_page() -> None:

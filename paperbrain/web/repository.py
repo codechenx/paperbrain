@@ -75,7 +75,7 @@ class WebCardRepository:
     def _list_sql(card_type: str) -> str:
         if card_type == "paper":
             return """
-                SELECT c.slug, 'paper' AS entity_type, c.body, EXTRACT(EPOCH FROM p.updated_at)::BIGINT AS sort_value
+                SELECT c.slug, 'paper' AS entity_type, c.body, p.updated_at::text AS sort_value
                 FROM paper_cards c
                 JOIN papers p ON p.id = c.paper_id
                 WHERE c.slug ILIKE %s OR c.body ILIKE %s
@@ -84,14 +84,14 @@ class WebCardRepository:
             """.strip()
         if card_type == "person":
             return """
-                SELECT slug, 'person' AS entity_type, body, 0 AS sort_value
+                SELECT slug, 'person' AS entity_type, body, slug AS sort_value
                 FROM person_cards
                 WHERE slug ILIKE %s OR body ILIKE %s
                 ORDER BY slug
                 LIMIT %s OFFSET %s;
             """.strip()
         return """
-            SELECT slug, 'topic' AS entity_type, body, 0 AS sort_value
+            SELECT slug, 'topic' AS entity_type, body, slug AS sort_value
             FROM topic_cards
             WHERE slug ILIKE %s OR body ILIKE %s
             ORDER BY slug
@@ -102,19 +102,19 @@ class WebCardRepository:
     def _get_sql(card_type: str) -> str:
         if card_type == "paper":
             return """
-                SELECT c.slug, 'paper' AS entity_type, c.body, EXTRACT(EPOCH FROM p.updated_at)::BIGINT AS sort_value
+                SELECT c.slug, 'paper' AS entity_type, c.body, p.updated_at::text AS sort_value
                 FROM paper_cards c
                 JOIN papers p ON p.id = c.paper_id
                 WHERE c.slug = %s;
             """.strip()
         if card_type == "person":
             return """
-                SELECT slug, 'person' AS entity_type, body, 0 AS sort_value
+                SELECT slug, 'person' AS entity_type, body, slug AS sort_value
                 FROM person_cards
                 WHERE slug = %s;
             """.strip()
         return """
-            SELECT slug, 'topic' AS entity_type, body, 0 AS sort_value
+            SELECT slug, 'topic' AS entity_type, body, slug AS sort_value
             FROM topic_cards
             WHERE slug = %s;
         """.strip()
@@ -139,5 +139,5 @@ class WebCardRepository:
             slug=str(slug),
             entity_type=str(entity_type),
             body=cls._decode_card_payload(body),
-            sort_value=int(sort_value),
+            sort_value=str(sort_value),
         )

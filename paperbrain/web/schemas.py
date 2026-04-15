@@ -17,4 +17,4 @@ class CardSummary:
     slug: str
     entity_type: CardType
     body: dict
-    sort_value: int
+    sort_value: str

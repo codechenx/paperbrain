@@ -14,7 +14,8 @@ except ModuleNotFoundError:  # pragma: no cover - env guard
 
 from paperbrain.adapters.docling import DoclingParser
 from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
-from paperbrain.adapters.llm import OpenAISummaryAdapter
+from paperbrain.adapters.gemini_client import GeminiClient
+from paperbrain.adapters.llm import GeminiSummaryAdapter, LLMAdapter, OpenAISummaryAdapter
 from paperbrain.adapters.openai_client import OpenAIClient
 from paperbrain.config import AppConfig, ConfigStore
 from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_SUMMARY_MODEL
@@ -38,17 +39,27 @@ class RuntimeAdapters:
     config: AppConfig
     parser: DoclingParser
     embeddings: OpenAIEmbeddingAdapter
-    llm: OpenAISummaryAdapter
+    llm: LLMAdapter
+
+
+def _is_gemini_summary_model(summary_model: str) -> bool:
+    return summary_model.strip().lower().startswith("gemini-")
 
 
 def build_runtime(config_path: Path) -> RuntimeAdapters:
     config = ConfigStore(config_path).load()
-    client = OpenAIClient(api_key=config.openai_api_key)
+    openai_client = OpenAIClient(api_key=config.openai_api_key)
+    summary_model = config.summary_model
+    if _is_gemini_summary_model(summary_model):
+        summary_client = GeminiClient(api_key=config.gemini_api_key)
+        llm: LLMAdapter = GeminiSummaryAdapter(client=summary_client, model=summary_model)
+    else:
+        llm = OpenAISummaryAdapter(client=openai_client, model=summary_model)
     return RuntimeAdapters(
         config=config,
         parser=DoclingParser(),
-        embeddings=OpenAIEmbeddingAdapter(client=client, model=config.embedding_model),
-        llm=OpenAISummaryAdapter(client=client, model=config.summary_model),
+        embeddings=OpenAIEmbeddingAdapter(client=openai_client, model=config.embedding_model),
+        llm=llm,
     )
 
 

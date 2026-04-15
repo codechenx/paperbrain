@@ -50,11 +50,10 @@ def build_runtime(config_path: Path) -> RuntimeAdapters:
     config = ConfigStore(config_path).load()
     summary_model = config.summary_model
     summary_uses_gemini = _is_gemini_summary_model(summary_model)
-    if summary_uses_gemini:
-        if not config.gemini_api_key.strip():
-            raise ValueError("Gemini API key is required for Gemini summary models")
-    elif not config.openai_api_key.strip():
-        raise ValueError("OpenAI API key is required for non-Gemini summary models")
+    if not config.openai_api_key.strip():
+        raise ValueError("OpenAI API key is required for embeddings")
+    if summary_uses_gemini and not config.gemini_api_key.strip():
+        raise ValueError("Gemini API key is required for Gemini summary models")
     openai_client = OpenAIClient(api_key=config.openai_api_key)
     if summary_uses_gemini:
         summary_client = GeminiClient(api_key=config.gemini_api_key)

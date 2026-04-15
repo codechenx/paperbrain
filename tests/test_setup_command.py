@@ -380,6 +380,41 @@ def test_build_runtime_requires_gemini_key_for_gemini_summary_model(
         build_runtime(config_path)
 
 
+def test_build_runtime_requires_openai_key_for_gemini_summary_model(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="",
+        gemini_api_key="gm-runtime",
+        summary_model="gemini-2.5-flash",
+        embedding_model="text-embedding-3-small",
+    )
+    config_path = tmp_path / "config" / "paperbrain.conf"
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            assert path == config_path
+
+        def load(self) -> AppConfig:
+            return config
+
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            _ = api_key
+
+    class FakeGeminiClient:
+        def __init__(self, api_key: str) -> None:
+            _ = api_key
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.cli.GeminiClient", FakeGeminiClient, raising=False)
+
+    with pytest.raises(ValueError, match="OpenAI API key is required for embeddings"):
+        build_runtime(config_path)
+
+
 def test_build_runtime_requires_openai_key_for_openai_summary_model(
     monkeypatch: Any, tmp_path: Path
 ) -> None:
@@ -400,7 +435,7 @@ def test_build_runtime_requires_openai_key_for_openai_summary_model(
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
 
-    with pytest.raises(ValueError, match="OpenAI API key is required for non-Gemini summary models"):
+    with pytest.raises(ValueError, match="OpenAI API key is required for embeddings"):
         build_runtime(config_path)
 
 

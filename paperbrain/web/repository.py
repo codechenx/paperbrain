@@ -1,5 +1,4 @@
 import json
-from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
 from paperbrain.web.schemas import CardListQuery, CardSummary
@@ -51,8 +50,11 @@ class WebCardRepository:
         if row is None:
             return None
 
-        summary = self._row_to_summary(row)
-        return asdict(summary)
+        row_slug, row_entity_type, body, _sort_value = row
+        payload = self._decode_card_payload(body)
+        payload.setdefault("slug", str(row_slug))
+        payload.setdefault("entity_type", str(row_entity_type))
+        return payload
 
     @staticmethod
     def _validate_card_type(card_type: str) -> None:

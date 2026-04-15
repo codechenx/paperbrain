@@ -119,3 +119,40 @@ def test_get_card_returns_none_for_missing_slug() -> None:
     assert "FROM paper_cards" in normalized_sql
     assert "WHERE" in normalized_sql
     assert params == ("papers/missing",)
+
+
+def test_get_card_returns_decoded_payload_with_top_level_defaults() -> None:
+    connection = FakeConnection(
+        row=("papers/example", "paper", '{"title": "Example Paper", "year": 2024}', 1712345678)
+    )
+    repo = WebCardRepository(connection)
+
+    card = repo.get_card(card_type="paper", slug="papers/example")
+
+    assert card == {
+        "slug": "papers/example",
+        "entity_type": "paper",
+        "title": "Example Paper",
+        "year": 2024,
+    }
+
+
+def test_list_cards_rejects_invalid_page() -> None:
+    connection = FakeConnection()
+    repo = WebCardRepository(connection)
+
+    with pytest.raises(ValueError, match="page must be >= 1"):
+        repo.list_cards(card_type="paper", query="genomics", page=0, page_size=20)
+
+    assert connection.executed == []
+
+
+@pytest.mark.parametrize("page_size", [0, 101])
+def test_list_cards_rejects_invalid_page_size(page_size: int) -> None:
+    connection = FakeConnection()
+    repo = WebCardRepository(connection)
+
+    with pytest.raises(ValueError, match="page_size must be between 1 and 100"):
+        repo.list_cards(card_type="paper", query="genomics", page=1, page_size=page_size)
+
+    assert connection.executed == []

@@ -301,6 +301,35 @@ def test_run_setup_openai_validation_failure_has_context(monkeypatch: Any, tmp_p
         )
 
 
+def test_run_setup_gemini_validation_failure_has_context(monkeypatch: Any, tmp_path: Path) -> None:
+    @contextmanager
+    def fake_connect(database_url: str, *, autocommit: bool = False) -> Iterator[object]:
+        _ = database_url, autocommit
+        yield object()
+
+    class FailingGeminiClient:
+        def __init__(self, api_key: str) -> None:
+            if not api_key.strip():
+                raise ValueError("Gemini API key is required when testing connections")
+
+        def summarize(self, text: str, model: str) -> str:
+            _ = text, model
+            raise AssertionError("Gemini summarize must not be reached when the API key is missing")
+
+    monkeypatch.setattr("paperbrain.services.setup.connect", fake_connect)
+    monkeypatch.setattr("paperbrain.services.setup.GeminiClient", FailingGeminiClient, raising=False)
+
+    with pytest.raises(RuntimeError, match=r"Setup failed during Gemini validation: Gemini API key is required when testing connections"):
+        run_setup(
+            database_url="postgresql://localhost:5432/paperbrain",
+            openai_api_key="sk-test",
+            gemini_api_key="",
+            summary_model="gemini-2.5-flash",
+            config_path=tmp_path / "paperbrain.conf",
+            test_connections=True,
+        )
+
+
 def test_run_setup_rejects_embedding_models_incompatible_with_schema(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="text-embedding-3-small"):
         run_setup(

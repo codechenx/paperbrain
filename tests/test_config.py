@@ -45,6 +45,7 @@ def test_load_legacy_config_uses_model_defaults(tmp_path: Path) -> None:
     )
     loaded = ConfigStore(config_path).load()
 
+    assert loaded.gemini_api_key == ""
     assert loaded.summary_model == "gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
 

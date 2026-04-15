@@ -60,21 +60,25 @@ def _card_value(card: Any, field: str) -> Any:
 
 
 def test_list_cards_filters_by_type_and_query_and_returns_has_more() -> None:
+    page = 2
+    page_size = 1
+    expected_limit = page_size + 1
+    expected_offset = (page - 1) * page_size
     connection = FakeConnection(
         rows=[
-            ("papers/example", "paper", "Example abstract", 100),
-            ("papers/overflow", "paper", "Overflow abstract", 99),
+            ("papers/example", "paper", '{"abstract": "Example abstract"}', 100),
+            ("papers/overflow", "paper", '{"abstract": "Overflow abstract"}', 99),
         ]
     )
     repo = WebCardRepository(connection)
 
-    cards, has_more = repo.list_cards(card_type="paper", query="genomics", page=2, page_size=1)
+    cards, has_more = repo.list_cards(card_type="paper", query="genomics", page=page, page_size=page_size)
 
     assert has_more is True
     assert len(cards) == 1
     assert _card_value(cards[0], "slug") == "papers/example"
     assert _card_value(cards[0], "entity_type") == "paper"
-    assert _card_value(cards[0], "body") == "Example abstract"
+    assert _card_value(cards[0], "body") == {"abstract": "Example abstract"}
     assert _card_value(cards[0], "sort_value") == 100
 
     assert len(connection.executed) == 1
@@ -89,6 +93,7 @@ def test_list_cards_filters_by_type_and_query_and_returns_has_more() -> None:
     assert params is not None
     assert "paper" not in params
     assert params.count("%genomics%") >= 1
+    assert params[-2:] == (expected_limit, expected_offset)
 
 
 def test_list_cards_rejects_invalid_card_type() -> None:

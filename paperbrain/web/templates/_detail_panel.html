@@ -1,6 +1,6 @@
 {% if card %}
   <article class="space-y-3">
-    <h2 class="text-xl font-semibold">{{ card.title or card.body.title or card.slug }}</h2>
+    <h2 class="text-xl font-semibold">{{ card.title or (card.body.title if card.body is mapping else none) or card.slug }}</h2>
     <p class="text-sm text-slate-500">Type: {{ card.entity_type or card_type }}</p>
     {% if card.body is mapping %}
       <pre class="overflow-x-auto rounded bg-slate-100 p-3 text-xs">{{ card.body | tojson(indent=2) }}</pre>

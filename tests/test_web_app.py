@@ -184,6 +184,24 @@ def test_card_detail_returns_200_and_rendered_content_for_existing_card(monkeypa
     assert fake_repo.get_card_calls == [{"card_type": "paper", "slug": "paper-1"}]
 
 
+def test_card_detail_uses_slug_title_fallback_when_body_is_not_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    client, fake_repo = _build_client(monkeypatch)
+    fake_repo.cards = [
+        {
+            "slug": "paper-fallback",
+            "entity_type": "paper",
+            "title": "",
+            "body": "not-a-mapping",
+        }
+    ]
+
+    response = client.get("/cards/paper/paper-fallback")
+
+    assert response.status_code == 200
+    assert "<h2 class=\"text-xl font-semibold\">paper-fallback</h2>" in response.text
+    assert "built-in method title" not in response.text
+
+
 def test_card_detail_returns_404_for_missing_card(monkeypatch: pytest.MonkeyPatch) -> None:
     client, fake_repo = _build_client(monkeypatch)
 

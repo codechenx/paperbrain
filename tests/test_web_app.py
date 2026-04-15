@@ -32,7 +32,7 @@ def _import_web_app_or_skip() -> Any:
     try:
         return import_module("paperbrain.web.app")
     except ModuleNotFoundError as exc:
-        pytest.skip(f"Skipping route contract checks until paperbrain.web.app exists: {exc}")
+        pytest.fail(f"Route contract checks require paperbrain.web.app to exist (red-phase guard): {exc}")
 
 
 def _build_client(monkeypatch: pytest.MonkeyPatch) -> Any:

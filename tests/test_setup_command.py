@@ -18,6 +18,7 @@ def test_run_setup_writes_project_config(tmp_path: Path) -> None:
     message = run_setup(
         database_url="postgresql://localhost:5432/paperbrain",
         openai_api_key="sk-test",
+        gemini_api_key="gm-test",
         summary_model="gpt-4.1-mini",
         embedding_model="text-embedding-3-small",
         config_path=config_path,
@@ -27,6 +28,7 @@ def test_run_setup_writes_project_config(tmp_path: Path) -> None:
     loaded = ConfigStore(config_path).load()
     assert loaded.database_url == "postgresql://localhost:5432/paperbrain"
     assert loaded.openai_api_key == "sk-test"
+    assert loaded.gemini_api_key == "gm-test"
     assert loaded.summary_model == "gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
     assert message == f"Saved configuration to {config_path}"
@@ -307,6 +309,18 @@ def test_run_setup_gemini_validation_failure_has_context(monkeypatch: Any, tmp_p
         _ = database_url, autocommit
         yield object()
 
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            _ = api_key
+
+        def embed(self, chunks: list[str], model: str) -> list[list[float]]:
+            _ = chunks, model
+            return [[0.1]]
+
+        def summarize(self, text: str, model: str) -> str:
+            _ = text, model
+            return "ok"
+
     class FailingGeminiClient:
         def __init__(self, api_key: str) -> None:
             if not api_key.strip():
@@ -317,13 +331,13 @@ def test_run_setup_gemini_validation_failure_has_context(monkeypatch: Any, tmp_p
             raise AssertionError("Gemini summarize must not be reached when the API key is missing")
 
     monkeypatch.setattr("paperbrain.services.setup.connect", fake_connect)
+    monkeypatch.setattr("paperbrain.services.setup.OpenAIClient", FakeOpenAIClient)
     monkeypatch.setattr("paperbrain.services.setup.GeminiClient", FailingGeminiClient, raising=False)
 
     with pytest.raises(RuntimeError, match=r"Setup failed during Gemini validation: Gemini API key is required when testing connections"):
         run_setup(
             database_url="postgresql://localhost:5432/paperbrain",
             openai_api_key="sk-test",
-            gemini_api_key="",
             summary_model="gemini-2.5-flash",
             config_path=tmp_path / "paperbrain.conf",
             test_connections=True,

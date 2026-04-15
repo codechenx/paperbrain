@@ -9,6 +9,7 @@ else:
 
 CREATE_STATEMENTS = [
     "CREATE EXTENSION IF NOT EXISTS vector;",
+    "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
     """
 CREATE TABLE IF NOT EXISTS papers (
     id TEXT PRIMARY KEY,
@@ -81,6 +82,10 @@ CREATE TABLE IF NOT EXISTS person_topic_links (
 );
 """.strip(),
     "CREATE INDEX IF NOT EXISTS idx_paper_chunks_paper_id ON paper_chunks (paper_id);",
+    "CREATE INDEX IF NOT EXISTS idx_paper_cards_card_type_slug ON paper_cards (card_type, slug);",
+    "CREATE INDEX IF NOT EXISTS idx_paper_cards_body_trgm ON paper_cards USING gin (body gin_trgm_ops);",
+    "CREATE INDEX IF NOT EXISTS idx_person_cards_body_trgm ON person_cards USING gin (body gin_trgm_ops);",
+    "CREATE INDEX IF NOT EXISTS idx_topic_cards_body_trgm ON topic_cards USING gin (body gin_trgm_ops);",
     "CREATE INDEX IF NOT EXISTS idx_paper_person_links_person_slug ON paper_person_links (person_slug);",
     "CREATE INDEX IF NOT EXISTS idx_paper_topic_links_topic_slug ON paper_topic_links (topic_slug);",
     "CREATE INDEX IF NOT EXISTS idx_person_topic_links_topic_slug ON person_topic_links (topic_slug);",

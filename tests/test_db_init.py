@@ -7,7 +7,15 @@ from paperbrain.db import CREATE_STATEMENTS, DROP_STATEMENTS, SCHEMA_SQL, connec
 
 def test_schema_sql_contains_pgvector_extension() -> None:
     assert "CREATE EXTENSION IF NOT EXISTS vector" in SCHEMA_SQL
+    assert "CREATE EXTENSION IF NOT EXISTS pg_trgm" in SCHEMA_SQL
     assert "CREATE TABLE IF NOT EXISTS papers" in SCHEMA_SQL
+
+
+def test_schema_sql_contains_card_search_indexes() -> None:
+    assert "idx_paper_cards_card_type_slug" in SCHEMA_SQL
+    assert "idx_paper_cards_body_trgm" in SCHEMA_SQL
+    assert "idx_person_cards_body_trgm" in SCHEMA_SQL
+    assert "idx_topic_cards_body_trgm" in SCHEMA_SQL
 
 
 def test_schema_statements_include_link_tables() -> None:

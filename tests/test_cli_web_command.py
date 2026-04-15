@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 
 from paperbrain import cli
 from paperbrain.cli import app
+from paperbrain.web import app as web_app
 
 
 def _make_fake_uvicorn_run(calls: list[dict[str, Any]]) -> Any:
@@ -35,8 +36,15 @@ def test_cli_web_uses_default_host_port_reload_and_prints_url(monkeypatch: Any) 
 
 def test_cli_web_forwards_explicit_options_and_prints_url(monkeypatch: Any, tmp_path: Path) -> None:
     calls: list[dict[str, Any]] = []
+    app_factory_calls: list[dict[str, Any]] = []
     config_path = tmp_path / "paperbrain.conf"
 
+    def fake_create_app(*args: Any, **kwargs: Any) -> object:
+        config_arg = kwargs.get("config_path", args[0] if args else None)
+        app_factory_calls.append({"config_path": config_arg})
+        return object()
+
+    monkeypatch.setattr(web_app, "create_app", fake_create_app)
     monkeypatch.setattr(cli, "uvicorn", SimpleNamespace(run=_make_fake_uvicorn_run(calls)), raising=False)
 
     result = CliRunner().invoke(
@@ -61,4 +69,6 @@ def test_cli_web_forwards_explicit_options_and_prints_url(monkeypatch: Any, tmp_
     assert call["reload"] is True
     assert call["factory"] is True
     assert call["app_factory"] is not None
+    call["app_factory"]()
+    assert app_factory_calls == [{"config_path": config_path}]
     assert "http://0.0.0.0:9001" in result.output

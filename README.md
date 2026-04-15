@@ -55,7 +55,7 @@ PaperBrain focuses on a **question-centric workflow**:
                      │ paperbrain summarize [--force-all]
                      ▼
       ┌─────────────────────────────────────────────────────────────┐
-      │ Provider-selected summarization (OpenAI/Gemini) +           │
+      │ Provider-selected summarization (OpenAI/Gemini/Ollama) +    │
       │ deterministic post-processing                               │
       │ - question-centered paper cards (Q/reasoning/evidence/lim)  │
       │ - person cards from corresponding-author big questions       │
@@ -172,6 +172,25 @@ paperbrain setup \
   --summary-model gemini-2.5-flash
 ```
 
+For Ollama summary models, pass the Ollama key and an `ollama:*` summary model.
+You can also override the Ollama base URL:
+
+```bash
+paperbrain setup \
+  --url postgresql://<user>:<pass>@localhost:5432/paperbrain \
+  --openai-api-key $OPENAI_API_KEY \
+  --ollama-api-key $OLLAMA_API_KEY \
+  --summary-model ollama:llama3.2
+
+# Optional custom Ollama endpoint
+paperbrain setup \
+  --url postgresql://<user>:<pass>@localhost:5432/paperbrain \
+  --openai-api-key $OPENAI_API_KEY \
+  --ollama-api-key $OLLAMA_API_KEY \
+  --ollama-base-url https://ollama.example \
+  --summary-model ollama:llama3.2
+```
+
 Default config path is:
 - `config/paperbrain.conf`
 
@@ -182,6 +201,8 @@ Config shape:
 database_url = "postgresql://<user>:<pass>@localhost:5432/paperbrain"
 openai_api_key = "sk-..."
 gemini_api_key = "AIza..."
+ollama_api_key = "ol-..."
+ollama_base_url = "https://ollama.com"
 summary_model = "gpt-4.1-mini"
 embedding_model = "text-embedding-3-small"
 ```
@@ -189,6 +210,7 @@ embedding_model = "text-embedding-3-small"
 Summary provider is selected from the summary model prefix:
 
 - `gemini-*` models use Gemini for summaries
+- `ollama:*` models use Ollama for summaries
 - all other summary models use OpenAI for summaries
 
 ### Initialize schema
@@ -209,7 +231,7 @@ paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --for
 
 | Command | Purpose | Key options |
 |---|---|---|
-| `paperbrain setup` | Save config and validate connections | `--url`, `--openai-api-key`, `--gemini-api-key`, `--summary-model`, `--embedding-model`, `--config-path`, `--test-connections/--no-test-connections` |
+| `paperbrain setup` | Save config and validate connections | `--url`, `--openai-api-key`, `--gemini-api-key`, `--ollama-api-key`, `--ollama-base-url`, `--summary-model`, `--embedding-model`, `--config-path`, `--test-connections/--no-test-connections` |
 | `paperbrain init` | Apply DB schema | `--url`, `--force` |
 | `paperbrain ingest PATH` | Parse PDFs and store chunks/embeddings | `--recursive`, `--force-all`, `--config-path` |
 | `paperbrain browse KEYWORD` | Keyword browse card bodies | `--type [paper\|person\|topic\|all]`, `--config-path` |
@@ -231,6 +253,9 @@ paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --op
 
 # 1b) Or use Gemini for summaries
 paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --openai-api-key $OPENAI_API_KEY --gemini-api-key $GEMINI_API_KEY --summary-model gemini-2.5-flash
+
+# 1c) Or use Ollama for summaries (optional: add --ollama-base-url)
+paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --openai-api-key $OPENAI_API_KEY --ollama-api-key $OLLAMA_API_KEY --summary-model ollama:llama3.2
 
 # 2) Initialize schema
 paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --force

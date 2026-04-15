@@ -304,7 +304,7 @@ class OpenAISummaryAdapter:
             "Defaults/failure policy: If a field cannot be supported by the provided text, return empty strings/arrays "
             "for that field while preserving required keys.\n\n"
             f"Title: {title}\n\n"
-            f"{paper_text[:10000]}"
+            f"{paper_text}"
         )
         raw = self.client.summarize(prompt, model=self.model)
         parsed = self._extract_json_object(raw)

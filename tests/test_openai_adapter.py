@@ -525,7 +525,9 @@ def test_openai_summary_adapter_extracts_title_and_metadata_first_from_two_page_
 
     client = MetadataFirstClient()
     adapter = OpenAISummaryAdapter(client=client, model="gpt-4.1-mini")
-    paper_text = ("x" * 5000) + "METADATA-OVERFLOW-MARKER" + ("x" * 3500)
+    metadata_overflow_marker = "METADATA-OVERFLOW-MARKER"
+    full_text_summary_marker = "SUMMARY-FULLTEXT-MARKER"
+    paper_text = ("x" * 5000) + metadata_overflow_marker + ("x" * 5100) + full_text_summary_marker + ("x" * 300)
 
     card = adapter.summarize_paper(paper_text, {"slug": "papers/test-paper", "title": "Original Title"})
 
@@ -543,9 +545,10 @@ def test_openai_summary_adapter_extracts_title_and_metadata_first_from_two_page_
         "When both a corresponding author name and email are present, format as Name <email>; "
         "if only email is available, return the plain email string." in metadata_prompt
     )
-    assert "METADATA-OVERFLOW-MARKER" not in metadata_prompt
+    assert metadata_overflow_marker not in metadata_prompt
+    assert full_text_summary_marker not in metadata_prompt
     assert summary_prompt.startswith("Create a concise structured summary of the paper")
-    assert "METADATA-OVERFLOW-MARKER" in summary_prompt
+    assert full_text_summary_marker in summary_prompt
 
 
 def test_openai_summary_adapter_uses_defaults_without_heuristic_metadata_fallback() -> None:

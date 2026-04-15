@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS person_topic_links (
 );
 """.strip(),
     "CREATE INDEX IF NOT EXISTS idx_paper_chunks_paper_id ON paper_chunks (paper_id);",
+    "CREATE INDEX IF NOT EXISTS idx_papers_updated_at_desc ON papers (updated_at DESC);",
     "CREATE INDEX IF NOT EXISTS idx_paper_cards_card_type_slug ON paper_cards (card_type, slug);",
     "CREATE INDEX IF NOT EXISTS idx_paper_cards_body_trgm ON paper_cards USING gin (body gin_trgm_ops);",
     "CREATE INDEX IF NOT EXISTS idx_paper_cards_slug_trgm ON paper_cards USING gin (slug gin_trgm_ops);",

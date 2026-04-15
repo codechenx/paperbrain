@@ -16,5 +16,16 @@ def run_init(database_url: str, force: bool) -> int:
                     for statement in statements:
                         cursor.execute(statement)
     except Exception as exc:
-        raise RuntimeError(f"Schema apply failed: {exc}") from exc
+        message = f"Schema apply failed: {exc}"
+        lowered = str(exc).lower()
+        if (
+            "permission denied" in lowered
+            and "extension" in lowered
+            and ("vector" in lowered or "pg_trgm" in lowered)
+        ):
+                message = (
+                    f"{message}. Ensure your database role has CREATE EXTENSION privileges, "
+                    "or ask an admin for preinstalled extensions (vector/pg_trgm)."
+                )
+        raise RuntimeError(message) from exc
     return len(statements)

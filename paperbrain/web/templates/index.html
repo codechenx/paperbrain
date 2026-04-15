@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="space-y-4">
+  <header class="space-y-3">
+    <h1 class="text-2xl font-semibold">PaperBrain Card Browser</h1>
+    <div class="flex flex-wrap gap-2">
+      <a
+        class="rounded bg-slate-800 px-3 py-2 text-sm text-white"
+        hx-get="/cards?card_type=paper&page=1&page_size={{ page_size }}&q={{ q|urlencode }}"
+        hx-target="#card-grid"
+        hx-swap="outerHTML"
+        hx-on::after-request="document.getElementById('active-card-type').value='paper'"
+      >Paper</a>
+      <a
+        class="rounded bg-slate-700 px-3 py-2 text-sm text-white"
+        hx-get="/cards?card_type=person&page=1&page_size={{ page_size }}&q={{ q|urlencode }}"
+        hx-target="#card-grid"
+        hx-swap="outerHTML"
+        hx-on::after-request="document.getElementById('active-card-type').value='person'"
+      >Person</a>
+      <a
+        class="rounded bg-slate-700 px-3 py-2 text-sm text-white"
+        hx-get="/cards?card_type=topic&page=1&page_size={{ page_size }}&q={{ q|urlencode }}"
+        hx-target="#card-grid"
+        hx-swap="outerHTML"
+        hx-on::after-request="document.getElementById('active-card-type').value='topic'"
+      >Topic</a>
+    </div>
+    <form
+      hx-get="/cards"
+      hx-target="#card-grid"
+      hx-swap="outerHTML"
+      hx-trigger="input changed delay:300ms, search, submit"
+      class="max-w-xl"
+    >
+      <input id="active-card-type" type="hidden" name="card_type" value="{{ card_type }}" />
+      <input type="hidden" name="page" value="1" />
+      <input type="hidden" name="page_size" value="{{ page_size }}" />
+      <input
+        class="w-full rounded border border-slate-300 px-3 py-2"
+        type="search"
+        name="q"
+        value="{{ q }}"
+        placeholder="Search cards"
+      />
+    </form>
+  </header>
+
+  <div class="grid gap-6 lg:grid-cols-[2fr,1fr]">
+    {% include "_card_grid.html" %}
+    <div id="detail-panel" class="rounded border border-slate-200 bg-white p-4">
+      {% include "_detail_panel.html" %}
+    </div>
+  </div>
+</section>
+{% endblock %}

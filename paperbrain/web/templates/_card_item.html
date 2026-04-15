@@ -1,0 +1,9 @@
+<article
+  class="mb-4 break-inside-avoid cursor-pointer rounded border border-slate-200 bg-white p-4 shadow-sm"
+  hx-get="/cards/{{ card_type }}/{{ card.slug }}"
+  hx-target="#detail-panel"
+  hx-swap="innerHTML"
+>
+  <h3 class="font-semibold">{{ card.title or (card.body.title if card.body is mapping else none) or card.slug }}</h3>
+  <p class="mt-2 text-sm text-slate-600">{{ card.entity_type or card_type }}</p>
+</article>

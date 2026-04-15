@@ -1,0 +1,24 @@
+{% if not append %}
+<section id="card-grid" class="columns-1 gap-4 space-y-4 md:columns-2 xl:columns-3">
+{% endif %}
+  {% for card in cards %}
+    {% include "_card_item.html" %}
+  {% else %}
+    {% if not append %}
+      <article class="rounded border border-slate-200 bg-white p-4 text-sm text-slate-600">No cards found.</article>
+    {% endif %}
+  {% endfor %}
+  {% if has_more %}
+    <div
+      id="card-grid-loader"
+      class="rounded border border-slate-200 bg-white p-4 text-center text-sm text-slate-500"
+      hx-get="/cards?card_type={{ card_type }}&q={{ q|urlencode }}&page={{ page + 1 }}&page_size={{ page_size }}"
+      hx-trigger="revealed"
+      hx-swap="outerHTML"
+    >
+      Loading more cards...
+    </div>
+  {% endif %}
+{% if not append %}
+</section>
+{% endif %}

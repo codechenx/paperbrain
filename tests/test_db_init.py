@@ -7,7 +7,19 @@ from paperbrain.db import CREATE_STATEMENTS, DROP_STATEMENTS, SCHEMA_SQL, connec
 
 def test_schema_sql_contains_pgvector_extension() -> None:
     assert "CREATE EXTENSION IF NOT EXISTS vector" in SCHEMA_SQL
+    assert "CREATE EXTENSION IF NOT EXISTS pg_trgm" in SCHEMA_SQL
     assert "CREATE TABLE IF NOT EXISTS papers" in SCHEMA_SQL
+
+
+def test_schema_sql_contains_card_search_indexes() -> None:
+    assert "CREATE INDEX IF NOT EXISTS idx_paper_cards_card_type_slug ON paper_cards (card_type, slug);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_papers_updated_at_desc ON papers (updated_at DESC);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_paper_cards_body_trgm ON paper_cards USING gin (body gin_trgm_ops);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_person_cards_body_trgm ON person_cards USING gin (body gin_trgm_ops);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_topic_cards_body_trgm ON topic_cards USING gin (body gin_trgm_ops);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_paper_cards_slug_trgm ON paper_cards USING gin (slug gin_trgm_ops);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_person_cards_slug_trgm ON person_cards USING gin (slug gin_trgm_ops);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_topic_cards_slug_trgm ON topic_cards USING gin (slug gin_trgm_ops);" in SCHEMA_SQL
 
 
 def test_schema_statements_include_link_tables() -> None:

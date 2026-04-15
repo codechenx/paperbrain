@@ -70,6 +70,56 @@ def test_run_setup_validates_database_and_openai(monkeypatch: Any, tmp_path: Pat
     assert calls["summarize"] == [("paperbrain connectivity check", "gpt-4.1-mini")]
 
 
+def test_run_setup_uses_gemini_summary_validation_for_gemini_models(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    calls: dict[str, Any] = {"db": [], "openai_embed": [], "gemini_summary": []}
+
+    @contextmanager
+    def fake_connect(database_url: str, *, autocommit: bool = False) -> Iterator[object]:
+        calls["db"].append((database_url, autocommit))
+        yield object()
+
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            calls["openai_api_key"] = api_key
+
+        def embed(self, chunks: list[str], model: str) -> list[list[float]]:
+            calls["openai_embed"].append((chunks, model))
+            return [[0.1]]
+
+        def summarize(self, text: str, model: str) -> str:
+            raise AssertionError("OpenAI summarize must not be used for Gemini summary models")
+
+    class FakeGeminiClient:
+        def __init__(self, api_key: str) -> None:
+            calls["gemini_api_key"] = api_key
+
+        def summarize(self, text: str, model: str) -> str:
+            calls["gemini_summary"].append((text, model))
+            return "ok"
+
+    monkeypatch.setattr("paperbrain.services.setup.connect", fake_connect)
+    monkeypatch.setattr("paperbrain.services.setup.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.services.setup.GeminiClient", FakeGeminiClient, raising=False)
+
+    run_setup(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-test",
+        gemini_api_key="gm-test",
+        summary_model="gemini-2.5-flash",
+        embedding_model="text-embedding-3-small",
+        config_path=tmp_path / "paperbrain.conf",
+        test_connections=True,
+    )
+
+    assert calls["db"] == [("postgresql://localhost:5432/paperbrain", False)]
+    assert calls["openai_api_key"] == "sk-test"
+    assert calls["openai_embed"] == [(["paperbrain connectivity check"], "text-embedding-3-small")]
+    assert calls["gemini_api_key"] == "gm-test"
+    assert calls["gemini_summary"] == [("paperbrain connectivity check", "gemini-2.5-flash")]
+
+
 def test_cli_setup_accepts_openai_options(monkeypatch: Any) -> None:
     calls: dict[str, Any] = {}
 
@@ -102,6 +152,36 @@ def test_cli_setup_accepts_openai_options(monkeypatch: Any) -> None:
     assert calls["embedding_model"] == "text-embedding-3-small"
     assert calls["config_path"] == Path("config/paperbrain.conf")
     assert calls["test_connections"] is True
+
+
+def test_cli_setup_accepts_gemini_api_key(monkeypatch: Any) -> None:
+    calls: dict[str, Any] = {}
+
+    def fake_run_setup(**kwargs: Any) -> str:
+        calls.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr("paperbrain.cli.run_setup", fake_run_setup)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "setup",
+            "--url",
+            "postgresql://localhost:5432/paperbrain",
+            "--openai-api-key",
+            "sk-test",
+            "--gemini-api-key",
+            "gm-test",
+            "--summary-model",
+            "gemini-2.5-flash",
+            "--embedding-model",
+            "text-embedding-3-small",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls["gemini_api_key"] == "gm-test"
 
 
 def test_cli_setup_reads_openai_key_from_env(monkeypatch: Any) -> None:

@@ -1,3 +1,4 @@
+import re
 from importlib import import_module
 from typing import Any
 
@@ -27,28 +28,32 @@ class FakeWebCardRepository:
         return None
 
 
-def _build_client(monkeypatch: pytest.MonkeyPatch) -> Any:
+def _import_web_app_or_skip() -> Any:
     try:
-        web_app = import_module("paperbrain.web.app")
-    except ModuleNotFoundError as exc:  # pragma: no cover - this should fail until Task 4
-        pytest.fail(f"Expected paperbrain.web.app to exist for FastAPI routes: {exc}")
+        return import_module("paperbrain.web.app")
+    except ModuleNotFoundError as exc:
+        pytest.skip(f"Skipping route contract checks until paperbrain.web.app exists: {exc}")
 
+
+def _build_client(monkeypatch: pytest.MonkeyPatch) -> Any:
+    web_app = _import_web_app_or_skip()
     fake_repo = FakeWebCardRepository()
 
     if hasattr(web_app, "get_web_repository"):
-        monkeypatch.setattr(web_app, "get_web_repository", lambda: fake_repo, raising=False)
-
-    if hasattr(web_app, "WebCardRepository"):
-        monkeypatch.setattr(web_app, "WebCardRepository", lambda _connection: fake_repo, raising=False)
-
-    if hasattr(web_app, "connect"):
-        monkeypatch.setattr(web_app, "connect", lambda *_args, **_kwargs: None, raising=False)
+        monkeypatch.setattr(web_app, "get_web_repository", lambda: fake_repo)
+    elif hasattr(web_app, "WebCardRepository") and hasattr(web_app, "connect"):
+        monkeypatch.setattr(web_app, "WebCardRepository", lambda _connection: fake_repo)
+        monkeypatch.setattr(web_app, "connect", lambda *_args, **_kwargs: None)
+    else:
+        pytest.fail(
+            "Expected repository seam via get_web_repository() or WebCardRepository+connect for route tests"
+        )
 
     if hasattr(web_app, "create_app"):
         app = web_app.create_app()
     elif hasattr(web_app, "app"):
         app = web_app.app
-    else:  # pragma: no cover - intentional test guard
+    else:
         pytest.fail("Expected paperbrain.web.app to expose create_app() or app")
 
     try:
@@ -59,21 +64,25 @@ def _build_client(monkeypatch: pytest.MonkeyPatch) -> Any:
     return TestClient(app)
 
 
-def test_homepage_renders_tabs_search_and_card_grid(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_web_app_module_is_importable() -> None:
+    import_module("paperbrain.web.app")
+
+
+def test_homepage_renders_tab_wiring_search_and_card_grid(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _build_client(monkeypatch)
 
     response = client.get("/")
 
     assert response.status_code == 200
     body = response.text
-    assert "Paper" in body
-    assert "Person" in body
-    assert "Topic" in body
-    assert "<input" in body
     assert 'id="card-grid"' in body
+    assert re.search(r'hx-get=["\']/cards\?[^"\']*card_type=paper', body)
+    assert re.search(r'hx-get=["\']/cards\?[^"\']*card_type=person', body)
+    assert re.search(r'hx-get=["\']/cards\?[^"\']*card_type=topic', body)
+    assert re.search(r'<input[^>]+name=["\']q["\']', body)
 
 
-def test_cards_endpoint_returns_grid_fragment_with_detail_hx_get(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cards_endpoint_returns_grid_fragment_with_detail_route_hx_get(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _build_client(monkeypatch)
 
     response = client.get("/cards", params={"card_type": "paper", "q": "genomics", "page": 1})
@@ -81,8 +90,17 @@ def test_cards_endpoint_returns_grid_fragment_with_detail_hx_get(monkeypatch: py
     assert response.status_code == 200
     body = response.text
     assert 'id="card-grid"' in body
-    assert '/cards/paper/paper-1' in body
-    assert "hx-get" in body
+    assert re.search(r'hx-get=["\']/cards/paper/paper-1["\']', body)
+
+
+def test_card_detail_returns_200_and_rendered_content_for_existing_card(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _build_client(monkeypatch)
+
+    response = client.get("/cards/paper/paper-1")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "Paper One" in body
 
 
 def test_card_detail_returns_404_for_missing_card(monkeypatch: pytest.MonkeyPatch) -> None:

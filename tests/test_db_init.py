@@ -12,14 +12,14 @@ def test_schema_sql_contains_pgvector_extension() -> None:
 
 
 def test_schema_sql_contains_card_search_indexes() -> None:
-    assert "idx_paper_cards_card_type_slug" in SCHEMA_SQL
-    assert "idx_papers_updated_at_desc" in SCHEMA_SQL
-    assert "idx_paper_cards_body_trgm" in SCHEMA_SQL
-    assert "idx_person_cards_body_trgm" in SCHEMA_SQL
-    assert "idx_topic_cards_body_trgm" in SCHEMA_SQL
-    assert "idx_paper_cards_slug_trgm" in SCHEMA_SQL
-    assert "idx_person_cards_slug_trgm" in SCHEMA_SQL
-    assert "idx_topic_cards_slug_trgm" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_paper_cards_card_type_slug ON paper_cards (card_type, slug);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_papers_updated_at_desc ON papers (updated_at DESC);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_paper_cards_body_trgm ON paper_cards USING gin (body gin_trgm_ops);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_person_cards_body_trgm ON person_cards USING gin (body gin_trgm_ops);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_topic_cards_body_trgm ON topic_cards USING gin (body gin_trgm_ops);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_paper_cards_slug_trgm ON paper_cards USING gin (slug gin_trgm_ops);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_person_cards_slug_trgm ON person_cards USING gin (slug gin_trgm_ops);" in SCHEMA_SQL
+    assert "CREATE INDEX IF NOT EXISTS idx_topic_cards_slug_trgm ON topic_cards USING gin (slug gin_trgm_ops);" in SCHEMA_SQL
 
 
 def test_schema_statements_include_link_tables() -> None:

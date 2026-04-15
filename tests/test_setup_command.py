@@ -372,6 +372,50 @@ def test_run_init_surfaces_extension_permission_hint(monkeypatch: Any) -> None:
         run_init("postgresql://localhost:5432/paperbrain", force=False)
 
 
+def test_run_init_surfaces_pg_trgm_permission_hint(monkeypatch: Any) -> None:
+    statements = ["CREATE EXTENSION IF NOT EXISTS pg_trgm;"]
+
+    class FakeCursor:
+        def __enter__(self) -> "FakeCursor":
+            return self
+
+        def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+            return None
+
+        def execute(self, sql: str) -> None:
+            _ = sql
+            raise RuntimeError('permission denied to create extension "pg_trgm"')
+
+    class FakeTransaction:
+        def __enter__(self) -> "FakeTransaction":
+            return self
+
+        def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+            return None
+
+    class FakeConnection:
+        def cursor(self) -> FakeCursor:
+            return FakeCursor()
+
+        def transaction(self) -> FakeTransaction:
+            return FakeTransaction()
+
+    @contextmanager
+    def fake_connect(database_url: str, *, autocommit: bool = False) -> Iterator[FakeConnection]:
+        assert database_url == "postgresql://localhost:5432/paperbrain"
+        assert autocommit is False
+        yield FakeConnection()
+
+    monkeypatch.setattr("paperbrain.services.init.schema_statements", lambda force: statements)
+    monkeypatch.setattr("paperbrain.services.init.connect", fake_connect)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"Schema apply failed: permission denied to create extension \"pg_trgm\".*CREATE EXTENSION privileges.*preinstalled extensions \(vector/pg_trgm\)",
+    ):
+        run_init("postgresql://localhost:5432/paperbrain", force=False)
+
+
 def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_path: Path) -> None:
     calls: dict[str, Any] = {}
     config = AppConfig(

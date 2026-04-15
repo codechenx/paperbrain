@@ -122,6 +122,61 @@ def test_run_setup_uses_gemini_summary_validation_for_gemini_models(
     assert calls["gemini_summary"] == [("paperbrain connectivity check", "gemini-2.5-flash")]
 
 
+def test_run_setup_uses_ollama_summary_validation_for_ollama_models(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    calls: dict[str, Any] = {"db": [], "openai_embed": [], "ollama_summary": []}
+
+    @contextmanager
+    def fake_connect(database_url: str, *, autocommit: bool = False) -> Iterator[object]:
+        calls["db"].append((database_url, autocommit))
+        yield object()
+
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            calls["openai_api_key"] = api_key
+
+        def embed(self, chunks: list[str], model: str) -> list[list[float]]:
+            calls["openai_embed"].append((chunks, model))
+            return [[0.1]]
+
+        def summarize(self, text: str, model: str) -> str:
+            raise AssertionError("OpenAI summarize must not be used for Ollama summary models")
+
+    class FakeOllamaCloudClient:
+        def __init__(self, api_key: str, base_url: str) -> None:
+            calls["ollama_client_args"] = (api_key, base_url)
+
+        def summarize(self, text: str, model: str) -> str:
+            calls["ollama_summary"].append((text, model))
+            return "ok"
+
+    monkeypatch.setattr("paperbrain.services.setup.connect", fake_connect)
+    monkeypatch.setattr("paperbrain.services.setup.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr(
+        "paperbrain.services.setup.OllamaCloudClient",
+        FakeOllamaCloudClient,
+        raising=False,
+    )
+
+    run_setup(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-test",
+        ollama_api_key="ol-test",
+        ollama_base_url="https://ollama.example",
+        summary_model="ollama:llama3.2",
+        embedding_model="text-embedding-3-small",
+        config_path=tmp_path / "paperbrain.conf",
+        test_connections=True,
+    )
+
+    assert calls["db"] == [("postgresql://localhost:5432/paperbrain", False)]
+    assert calls["openai_api_key"] == "sk-test"
+    assert calls["openai_embed"] == [(["paperbrain connectivity check"], "text-embedding-3-small")]
+    assert calls["ollama_client_args"] == ("ol-test", "https://ollama.example")
+    assert calls["ollama_summary"] == [("paperbrain connectivity check", "llama3.2")]
+
+
 def test_cli_setup_accepts_openai_options(monkeypatch: Any) -> None:
     calls: dict[str, Any] = {}
 
@@ -339,6 +394,52 @@ def test_run_setup_gemini_validation_failure_has_context(monkeypatch: Any, tmp_p
             database_url="postgresql://localhost:5432/paperbrain",
             openai_api_key="sk-test",
             summary_model="gemini-2.5-flash",
+            config_path=tmp_path / "paperbrain.conf",
+            test_connections=True,
+        )
+
+
+def test_run_setup_ollama_validation_failure_has_context(monkeypatch: Any, tmp_path: Path) -> None:
+    @contextmanager
+    def fake_connect(database_url: str, *, autocommit: bool = False) -> Iterator[object]:
+        _ = database_url, autocommit
+        yield object()
+
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            _ = api_key
+
+        def embed(self, chunks: list[str], model: str) -> list[list[float]]:
+            _ = chunks, model
+            return [[0.1]]
+
+        def summarize(self, text: str, model: str) -> str:
+            _ = text, model
+            raise AssertionError("OpenAI summarize must not be used for Ollama summary models")
+
+    class FailingOllamaCloudClient:
+        def __init__(self, api_key: str, base_url: str) -> None:
+            _ = base_url
+            if not api_key.strip():
+                raise ValueError("Ollama API key is required when testing connections")
+
+        def summarize(self, text: str, model: str) -> str:
+            _ = text, model
+            raise AssertionError("Ollama summarize must not be reached when the API key is missing")
+
+    monkeypatch.setattr("paperbrain.services.setup.connect", fake_connect)
+    monkeypatch.setattr("paperbrain.services.setup.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr(
+        "paperbrain.services.setup.OllamaCloudClient",
+        FailingOllamaCloudClient,
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match=r"Setup failed during Ollama validation: Ollama API key is required when testing connections"):
+        run_setup(
+            database_url="postgresql://localhost:5432/paperbrain",
+            openai_api_key="sk-test",
+            summary_model="ollama:llama3.2",
             config_path=tmp_path / "paperbrain.conf",
             test_connections=True,
         )

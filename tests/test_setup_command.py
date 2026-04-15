@@ -744,3 +744,89 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
     assert calls["repo"] is fake_repo
     assert calls["llm_seen"] is True
     assert calls["run_force_all"] is True
+
+
+def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    calls: dict[str, Any] = {}
+    config_path = tmp_path / "config" / "paperbrain.conf"
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        gemini_api_key="gm-runtime",
+        summary_model="gemini-2.5-flash",
+        embedding_model="text-embedding-3-small",
+    )
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            calls["config_path"] = path
+
+        def load(self) -> AppConfig:
+            return config
+
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            calls["openai_api_key"] = api_key
+
+    class FakeEmbeddingAdapter:
+        def __init__(self, *, client: Any, model: str) -> None:
+            calls["embedding_model"] = model
+            calls["embedding_client_seen"] = isinstance(client, FakeOpenAIClient)
+
+    class FakeGeminiClient:
+        def __init__(self, api_key: str) -> None:
+            calls["gemini_api_key"] = api_key
+
+    class FakeGeminiSummaryAdapter:
+        def __init__(self, *, client: Any, model: str) -> None:
+            calls["summary_model"] = model
+            calls["summary_client_seen"] = isinstance(client, FakeGeminiClient)
+
+    class FakeSummarizeService:
+        def __init__(self, *, repo: Any, llm: Any) -> None:
+            calls["repo"] = repo
+            calls["llm_seen"] = isinstance(llm, FakeGeminiSummaryAdapter)
+
+        def run(self, force_all: bool) -> SummaryStats:
+            calls["run_force_all"] = force_all
+            return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
+
+    @contextmanager
+    def fake_connect(database_url: str, *, autocommit: bool = False) -> Iterator[str]:
+        calls["connect"] = (database_url, autocommit)
+        yield "fake-connection"
+
+    fake_repo = object()
+
+    def fail_openai_summary_adapter(**kwargs: Any) -> None:
+        _ = kwargs
+        pytest.fail("OpenAI summary adapter must not be used for Gemini models")
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.cli.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
+    monkeypatch.setattr("paperbrain.cli.GeminiClient", FakeGeminiClient, raising=False)
+    monkeypatch.setattr("paperbrain.cli.GeminiSummaryAdapter", FakeGeminiSummaryAdapter, raising=False)
+    monkeypatch.setattr("paperbrain.cli.OpenAISummaryAdapter", fail_openai_summary_adapter)
+    monkeypatch.setattr("paperbrain.cli.SummarizeService", FakeSummarizeService)
+    monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
+    monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["summarize", "--force-all", "--config-path", str(config_path)])
+
+    assert result.exit_code == 0
+    assert "Summarized cards: papers=3 people=2 topics=1" in result.output
+    assert calls["config_path"] == config_path
+    assert calls["openai_api_key"] == "sk-runtime"
+    assert calls["embedding_model"] == "text-embedding-3-small"
+    assert calls["embedding_client_seen"] is True
+    assert calls["gemini_api_key"] == "gm-runtime"
+    assert calls["summary_model"] == "gemini-2.5-flash"
+    assert calls["summary_client_seen"] is True
+    assert calls["connect"] == ("postgresql://localhost:5432/paperbrain", False)
+    assert calls["repo"] is fake_repo
+    assert calls["llm_seen"] is True
+    assert calls["run_force_all"] is True

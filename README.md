@@ -240,6 +240,14 @@ exported_cards/
     *.md
 ```
 
+### Web Viewer (FastAPI + Tailwind)
+
+```bash
+uvicorn paperbrain.web.app:create_app --factory --host 127.0.0.1 --port 8000
+```
+
+Open the web viewer to browse cards by tab, search quickly, view masonry-style card grids, and inspect full card details in the side panel.
+
 ---
 
 ## 7. Troubleshooting

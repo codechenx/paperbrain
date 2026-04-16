@@ -46,5 +46,8 @@ Do not mark the workflow complete until all fields are reported:
 - `ingest_result`: scope, command, and outcome.
 - `summarize_result`: command, outcome, and card/update evidence.
 - `export_result`: output path and file-layout evidence.
+- `counts`: key totals from run output (for example, ingested papers, summarized cards, exported files).
+- `skipped_categories`: categories skipped during the run and why, or `none`.
+- `failure_categories`: any failure buckets encountered (auth, quota, model, export, etc.) and current status, or `none`.
 - `validation_findings`: duplicate/export/provider checks performed.
-- `follow_up`: remaining risks or `none`.
+- `next_actions`: explicit next actions to complete remediation or `none`.

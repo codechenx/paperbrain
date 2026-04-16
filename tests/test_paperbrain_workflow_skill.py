@@ -26,17 +26,50 @@ REQUIRED_TRIGGERS = [
     "If provider auth fails, read `references/provider-troubleshooting.md`.",
     "If duplicate exports are suspected, read `references/dedupe-and-export-checks.md`.",
 ]
+REQUIRED_COMPLETION_FIELDS = [
+    "`counts`",
+    "`skipped_categories`",
+    "`failure_categories`",
+    "`next_actions`",
+]
 REFERENCE_EXPECTATIONS = {
-    "commands.md": "python3 -m pytest -q",
+    "commands.md": 'paperbrain summarize --config-path "$CONFIG_PATH"',
     "provider-troubleshooting.md": "Invalid username or token",
     "dedupe-and-export-checks.md": "`source_path` mismatch check (absolute vs relative)",
 }
+PROVIDER_DIAGNOSTIC_COMMANDS = {
+    "Invalid username or token": 'python3 -c \'import os; print("OPENAI_API_KEY set" if os.getenv("OPENAI_API_KEY") else "OPENAI_API_KEY missing")\'',
+    "401 Unauthorized": 'paperbrain summarize --config-path "$CONFIG_PATH"',
+    "403 Forbidden": 'paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "openai:gpt-4o-mini" --config-path "$CONFIG_PATH" --test-connections',
+    "429 Too Many Requests": 'paperbrain summarize --config-path "$CONFIG_PATH" && paperbrain stats --config-path "$CONFIG_PATH"',
+    "model not found": 'paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "gemini:gemini-1.5-flash" --config-path "$CONFIG_PATH" --test-connections',
+}
+CANONICAL_WORKFLOW_COMMANDS = [
+    'paperbrain ingest /abs/path/to/pdfs --recursive --config-path "$CONFIG_PATH"',
+    'paperbrain summarize --config-path "$CONFIG_PATH"',
+    'paperbrain export --output-dir /abs/path/to/export --config-path "$CONFIG_PATH"',
+]
+POST_STEP_VERIFICATION_COMMANDS = [
+    'paperbrain stats --config-path "$CONFIG_PATH"',
+    'paperbrain search "<title keyword>" --top-k 3 --include-cards --config-path "$CONFIG_PATH"',
+    "find /abs/path/to/export -maxdepth 2 -type d | sort",
+    "test -f /abs/path/to/export/index.md",
+]
 DEDUPE_MISMATCH_FLOW_MARKERS = [
     "Absolute path example:",
     "Relative path example:",
     "Normalize both paths to the same base directory and compare the resolved result.",
     "treat this as a path-format mismatch (not distinct sources)",
 ]
+
+
+def _section_block(content: str, header: str) -> str:
+    start = content.index(header)
+    tail = content[start:]
+    next_header = tail.find("\n## ", len(header))
+    if next_header == -1:
+        return tail
+    return tail[:next_header]
 
 
 def test_skill_package_files_exist() -> None:
@@ -79,11 +112,39 @@ def test_skill_markdown_contains_reference_triggers() -> None:
         assert trigger in content
 
 
+def test_skill_completion_gate_requires_reporting_fields() -> None:
+    content = SKILL_FILE.read_text(encoding="utf-8")
+    completion_gate = _section_block(content, "## Completion gate")
+    for field in REQUIRED_COMPLETION_FIELDS:
+        assert field in completion_gate
+
+
 def test_reference_documents_include_required_content() -> None:
     references_dir = SKILL_DIR / "references"
     for file_name, expected_text in REFERENCE_EXPECTATIONS.items():
         content = (references_dir / file_name).read_text(encoding="utf-8")
         assert expected_text in content
+
+
+def test_provider_troubleshooting_includes_diagnostic_commands_per_category() -> None:
+    content = (SKILL_DIR / "references" / "provider-troubleshooting.md").read_text(
+        encoding="utf-8"
+    )
+    for category, command in PROVIDER_DIAGNOSTIC_COMMANDS.items():
+        assert category in content
+        assert command in content
+
+
+def test_commands_reference_includes_canonical_patterns_with_config_path() -> None:
+    content = (SKILL_DIR / "references" / "commands.md").read_text(encoding="utf-8")
+    for command in CANONICAL_WORKFLOW_COMMANDS:
+        assert command in content
+
+
+def test_commands_reference_includes_post_step_verification_commands() -> None:
+    content = (SKILL_DIR / "references" / "commands.md").read_text(encoding="utf-8")
+    for command in POST_STEP_VERIFICATION_COMMANDS:
+        assert command in content
 
 
 def test_dedupe_reference_includes_source_path_mismatch_flow() -> None:

@@ -29,8 +29,14 @@ REQUIRED_TRIGGERS = [
 REFERENCE_EXPECTATIONS = {
     "commands.md": "python3 -m pytest -q",
     "provider-troubleshooting.md": "Invalid username or token",
-    "dedupe-and-export-checks.md": "source_path",
+    "dedupe-and-export-checks.md": "`source_path` mismatch check (absolute vs relative)",
 }
+DEDUPE_MISMATCH_FLOW_MARKERS = [
+    "Absolute path example:",
+    "Relative path example:",
+    "Normalize both paths to the same base directory and compare the resolved result.",
+    "treat this as a path-format mismatch (not distinct sources)",
+]
 
 
 def test_skill_package_files_exist() -> None:
@@ -78,3 +84,11 @@ def test_reference_documents_include_required_content() -> None:
     for file_name, expected_text in REFERENCE_EXPECTATIONS.items():
         content = (references_dir / file_name).read_text(encoding="utf-8")
         assert expected_text in content
+
+
+def test_dedupe_reference_includes_source_path_mismatch_flow() -> None:
+    content = (SKILL_DIR / "references" / "dedupe-and-export-checks.md").read_text(
+        encoding="utf-8"
+    )
+    positions = [content.index(marker) for marker in DEDUPE_MISMATCH_FLOW_MARKERS]
+    assert positions == sorted(positions)

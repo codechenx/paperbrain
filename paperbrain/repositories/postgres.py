@@ -114,6 +114,28 @@ class PostgresRepo:
         row = self.fetchone("SELECT 1 FROM papers WHERE source_path = %s", (source_path,))
         return row is not None
 
+    def has_paper(self, paper: ParsedPaper) -> bool:
+        title = _strip_nul_bytes(paper.title)
+        journal = _strip_nul_bytes(paper.journal)
+        full_text = _strip_nul_bytes(paper.full_text)
+        authors = json.dumps([_strip_nul_bytes(author) for author in paper.authors])
+        corresponding_authors = json.dumps([_strip_nul_bytes(author) for author in paper.corresponding_authors])
+        row = self.fetchone(
+            """
+            SELECT 1
+            FROM papers
+            WHERE title = %s
+              AND journal = %s
+              AND year = %s
+              AND authors = %s
+              AND corresponding_authors = %s
+              AND md5(full_text) = md5(%s)
+            LIMIT 1;
+            """.strip(),
+            (title, journal, paper.year, authors, corresponding_authors, full_text),
+        )
+        return row is not None
+
     def browse(self, keyword: str, card_type: str) -> list[dict]:
         if card_type not in {"paper", "person", "topic", "all"}:
             raise ValueError("card_type must be one of: paper, person, topic, all")
@@ -410,6 +432,55 @@ class PostgresRepo:
         full_text = _strip_nul_bytes(paper.full_text)
         authors = [_strip_nul_bytes(author) for author in paper.authors]
         corresponding_authors = [_strip_nul_bytes(author) for author in paper.corresponding_authors]
+        authors_json = json.dumps(authors)
+        corresponding_authors_json = json.dumps(corresponding_authors)
+
+        existing = self.fetchone(
+            """
+            SELECT id
+            FROM papers
+            WHERE title = %s
+              AND journal = %s
+              AND year = %s
+              AND authors = %s
+              AND corresponding_authors = %s
+              AND md5(full_text) = md5(%s)
+            LIMIT 1;
+            """.strip(),
+            (title, journal, paper.year, authors_json, corresponding_authors_json, full_text),
+        )
+        if existing is not None:
+            paper_id = str(existing[0])
+            if force:
+                paper_hash = paper_id.removeprefix("paper-")
+                slug = f"{slugify(title) or 'untitled-paper'}-{paper_hash}"
+                self.execute(
+                    """
+                    UPDATE papers
+                    SET slug = %s,
+                        title = %s,
+                        journal = %s,
+                        year = %s,
+                        authors = %s,
+                        corresponding_authors = %s,
+                        source_path = %s,
+                        full_text = %s,
+                        updated_at = NOW()
+                    WHERE id = %s;
+                    """.strip(),
+                    (
+                        slug,
+                        title,
+                        journal,
+                        paper.year,
+                        authors_json,
+                        corresponding_authors_json,
+                        paper.source_path,
+                        full_text,
+                        paper_id,
+                    ),
+                )
+            return paper_id
 
         paper_hash = hashlib.sha1(paper.source_path.encode("utf-8")).hexdigest()[:12]
         paper_id = f"paper-{paper_hash}"
@@ -420,8 +491,8 @@ class PostgresRepo:
             title,
             journal,
             paper.year,
-            json.dumps(authors),
-            json.dumps(corresponding_authors),
+            authors_json,
+            corresponding_authors_json,
             paper.source_path,
             full_text,
         )

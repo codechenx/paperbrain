@@ -48,16 +48,37 @@ class FakeEmbeddings:
 
 class FakeRepo:
     def __init__(self) -> None:
-        self._existing: set[str] = set()
+        self._existing: set[tuple[str, str, int, tuple[str, ...], tuple[str, ...], str]] = set()
         self.upserts: list[tuple[str, bool]] = []
         self.replacements: list[tuple[str, list[str], list[list[float]]]] = []
 
     def has_source(self, source_path: str) -> bool:
-        return source_path in self._existing
+        _ = source_path
+        return False
+
+    def has_paper(self, paper) -> bool:  # noqa: ANN001
+        key = (
+            paper.title,
+            paper.journal,
+            paper.year,
+            tuple(paper.authors),
+            tuple(paper.corresponding_authors),
+            paper.full_text,
+        )
+        return key in self._existing
 
     def upsert_paper(self, paper, force: bool) -> str:  # noqa: ANN001
         self.upserts.append((paper.source_path, force))
-        self._existing.add(paper.source_path)
+        self._existing.add(
+            (
+                paper.title,
+                paper.journal,
+                paper.year,
+                tuple(paper.authors),
+                tuple(paper.corresponding_authors),
+                paper.full_text,
+            )
+        )
         return "paper-1"
 
     def replace_chunks(self, paper_id: str, chunks: list[str], vectors: list[list[float]]) -> None:
@@ -82,10 +103,29 @@ def test_ingest_service_skips_existing_without_force(tmp_path: Path) -> None:
     assert inserted1 == 1
     assert inserted2 == 0
     assert inserted3 == 1
-    assert parser.calls == [paper_file, paper_file]
+    assert parser.calls == [paper_file, paper_file, paper_file]
     assert embeddings.calls == [["one two three", "four five six"], ["one two three", "four five six"]]
     assert repo.upserts == [(str(paper_file), False), (str(paper_file), True)]
     assert len(repo.replacements) == 2
+
+
+def test_ingest_service_skips_existing_even_when_source_path_differs(tmp_path: Path) -> None:
+    repo = FakeRepo()
+    parser = FakeParser()
+    embeddings = FakeEmbeddings()
+    service = IngestService(repo=repo, parser=parser, embeddings=embeddings, chunk_size_words=3)
+
+    relative_file = tmp_path / "a.pdf"
+    absolute_file = relative_file.resolve()
+    relative_file.write_text("fake", encoding="utf-8")
+
+    inserted1 = service.ingest_paths([str(relative_file)], force_all=False)
+    inserted2 = service.ingest_paths([str(absolute_file)], force_all=False)
+
+    assert inserted1 == 1
+    assert inserted2 == 0
+    assert len(repo.upserts) == 1
+    assert len(repo.replacements) == 1
 
 
 def test_docling_parser_raises_for_missing_file(tmp_path: Path) -> None:

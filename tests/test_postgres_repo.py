@@ -150,15 +150,34 @@ def test_has_source_returns_false_when_row_missing() -> None:
     assert connection.executed == [("SELECT 1 FROM papers WHERE source_path = %s", ("/papers/missing.pdf",))]
 
 
+def test_has_paper_returns_true_when_matching_content_exists() -> None:
+    connection = FakeConnection(row=(1,))
+    repo = PostgresRepo(connection)
+
+    assert repo.has_paper(_make_parsed_paper()) is True
+    sql, params = connection.executed[0]
+    assert "SELECT 1" in sql
+    assert "FROM papers" in sql
+    assert "title = %s" in sql
+    assert "journal = %s" in sql
+    assert "year = %s" in sql
+    assert "authors = %s" in sql
+    assert "corresponding_authors = %s" in sql
+    assert "md5(full_text) = md5(%s)" in sql
+    assert params is not None
+    assert params[0] == "A Study on Testing"
+    assert params[1] == "Journal of Tests"
+
+
 def test_upsert_paper_force_false_inserts_and_returns_new_id() -> None:
-    connection = FakeConnection(row=("paper-new",))
+    connection = FakeConnection(row_sequence=[None, ("paper-new",)])
     repo = PostgresRepo(connection)
 
     paper_id = repo.upsert_paper(_make_parsed_paper(), force=False)
 
     assert paper_id == "paper-new"
-    assert len(connection.executed) == 1
-    sql, params = connection.executed[0]
+    assert len(connection.executed) == 2
+    sql, params = connection.executed[1]
     assert "ON CONFLICT (source_path) DO NOTHING" in _normalize_sql(sql)
     assert params is not None
     expected_id, expected_slug = _expected_generated_id_and_slug()
@@ -170,35 +189,30 @@ def test_upsert_paper_force_false_inserts_and_returns_new_id() -> None:
 
 
 def test_upsert_paper_force_false_falls_back_to_existing_id_on_conflict() -> None:
-    connection = FakeConnection(row_sequence=[None, ("paper-existing",)])
+    connection = FakeConnection(row=("paper-existing",))
     repo = PostgresRepo(connection)
 
     paper_id = repo.upsert_paper(_make_parsed_paper(), force=False)
 
     assert paper_id == "paper-existing"
-    assert len(connection.executed) == 2
-    insert_sql, insert_params = connection.executed[0]
-    select_sql, select_params = connection.executed[1]
-    assert "ON CONFLICT (source_path) DO NOTHING" in _normalize_sql(insert_sql)
-    assert insert_params is not None
-    expected_id, expected_slug = _expected_generated_id_and_slug()
-    assert insert_params[0] == expected_id
-    assert insert_params[1] == expected_slug
-    assert insert_params[7] == "/papers/testing.pdf"
-    assert select_sql == "SELECT id FROM papers WHERE source_path = %s"
-    assert select_params == ("/papers/testing.pdf",)
+    assert len(connection.executed) == 1
+    select_sql, select_params = connection.executed[0]
+    assert "SELECT id" in select_sql
+    assert "FROM papers" in select_sql
+    assert select_params is not None
+    assert select_params[0] == "A Study on Testing"
 
 
 def test_upsert_paper_force_false_raises_when_insert_and_fallback_missing() -> None:
-    connection = FakeConnection(row_sequence=[None, None])
+    connection = FakeConnection(row_sequence=[None, None, None])
     repo = PostgresRepo(connection)
 
     with pytest.raises(RuntimeError, match=r"^Failed to upsert paper$"):
         repo.upsert_paper(_make_parsed_paper(), force=False)
 
-    assert len(connection.executed) == 2
-    insert_sql, insert_params = connection.executed[0]
-    select_sql, select_params = connection.executed[1]
+    assert len(connection.executed) == 3
+    insert_sql, insert_params = connection.executed[1]
+    select_sql, select_params = connection.executed[2]
     assert "ON CONFLICT (source_path) DO NOTHING" in _normalize_sql(insert_sql)
     assert insert_params is not None
     expected_id, expected_slug = _expected_generated_id_and_slug()
@@ -209,14 +223,14 @@ def test_upsert_paper_force_false_raises_when_insert_and_fallback_missing() -> N
 
 
 def test_upsert_paper_force_true_uses_update_on_conflict() -> None:
-    connection = FakeConnection(row=("paper-updated",))
+    connection = FakeConnection(row_sequence=[None, ("paper-updated",)])
     repo = PostgresRepo(connection)
 
     paper_id = repo.upsert_paper(_make_parsed_paper(), force=True)
 
     assert paper_id == "paper-updated"
-    assert len(connection.executed) == 1
-    sql, params = connection.executed[0]
+    assert len(connection.executed) == 2
+    sql, params = connection.executed[1]
     normalized_sql = _normalize_sql(sql)
     assert "ON CONFLICT (source_path) DO UPDATE SET" in normalized_sql
     assert "updated_at = NOW()" in normalized_sql
@@ -229,7 +243,7 @@ def test_upsert_paper_force_true_uses_update_on_conflict() -> None:
 
 
 def test_upsert_paper_strips_nul_bytes_from_text_fields() -> None:
-    connection = FakeConnection(row=("paper-updated",))
+    connection = FakeConnection(row_sequence=[None, ("paper-updated",)])
     repo = PostgresRepo(connection)
     paper = ParsedPaper(
         title="Bad\x00Title",
@@ -243,7 +257,7 @@ def test_upsert_paper_strips_nul_bytes_from_text_fields() -> None:
 
     _ = repo.upsert_paper(paper, force=True)
 
-    _, params = connection.executed[0]
+    _, params = connection.executed[1]
     assert params is not None
     assert params[2] == "BadTitle"
     assert params[3] == "BadJournal"

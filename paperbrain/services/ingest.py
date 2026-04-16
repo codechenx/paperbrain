@@ -9,6 +9,9 @@ class IngestRepository(Protocol):
     def has_source(self, source_path: str) -> bool:
         ...
 
+    def has_paper(self, paper: ParsedPaper) -> bool:
+        ...
+
     def upsert_paper(self, paper: ParsedPaper, force: bool) -> str:
         ...
 
@@ -44,10 +47,9 @@ class IngestService:
         files = self._discover_files(paths, recursive=recursive)
         inserted = 0
         for file_path in files:
-            source_path = str(file_path)
-            if not force_all and self.repo.has_source(source_path):
-                continue
             parsed = self.parser.parse_pdf(file_path)
+            if not force_all and self.repo.has_paper(parsed):
+                continue
             chunks = chunk_words(parsed.full_text, self.chunk_size_words)
             vectors = self.embeddings.embed(chunks)
             if len(chunks) != len(vectors):

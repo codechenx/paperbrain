@@ -28,6 +28,7 @@ If duplicate exports are suspected, read `references/dedupe-and-export-checks.md
 4. Run summarize and confirm card generation signals.
 5. Run export and inspect output structure.
 6. If issues appear, follow the matching reference guide and re-run minimally.
+7. Post-run validation: reconcile run counts, report skipped categories, and run dedupe/export sanity checks.
 
 ## Validation loop
 

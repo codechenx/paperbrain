@@ -28,6 +28,9 @@ REQUIRED_TRIGGERS = [
     "If provider auth fails, read `references/provider-troubleshooting.md`.",
     "If duplicate exports are suspected, read `references/dedupe-and-export-checks.md`.",
 ]
+REQUIRED_CHECKLIST_POST_RUN_VALIDATION = (
+    "Post-run validation: reconcile run counts, report skipped categories, and run dedupe/export sanity checks."
+)
 REQUIRED_COMPLETION_FIELDS = [
     "`provider_model`",
     "`baseline_checks`",
@@ -211,6 +214,12 @@ def test_skill_markdown_contains_required_sections() -> None:
     content = SKILL_FILE.read_text(encoding="utf-8")
     for section in REQUIRED_SECTIONS:
         assert section in content
+
+
+def test_skill_workflow_checklist_requires_post_run_validation_wording() -> None:
+    content = SKILL_FILE.read_text(encoding="utf-8")
+    checklist = _section_block(content, "## Workflow checklist")
+    assert REQUIRED_CHECKLIST_POST_RUN_VALIDATION in checklist
 
 
 def test_skill_markdown_requires_provider_prefixes() -> None:

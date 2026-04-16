@@ -514,7 +514,6 @@ def test_build_runtime_rejects_unprefixed_summary_model(monkeypatch: Any, tmp_pa
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
-    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
 
     with pytest.raises(ValueError, match="Summary model must be prefixed with one of: openai:, gemini:, ollama:"):
         build_runtime(config_path)
@@ -537,7 +536,6 @@ def test_build_runtime_rejects_unknown_summary_provider_prefix(monkeypatch: Any,
             return config
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
-    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
 
     with pytest.raises(ValueError, match="Unknown summary provider prefix"):

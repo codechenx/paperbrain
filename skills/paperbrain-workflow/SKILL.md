@@ -24,6 +24,7 @@ If duplicate exports are suspected, read `references/dedupe-and-export-checks.md
    - `openai:<model>`
    - `gemini:<model>`
    - `ollama:<model>`
+   - Fail-fast rule: no silent fallbacks, no provider auto-switching, and provider/model errors must be surfaced and fixed before continuing.
 3. Run ingest for target files/directories.
 4. Run summarize and confirm card generation signals.
 5. Run export and inspect output structure.

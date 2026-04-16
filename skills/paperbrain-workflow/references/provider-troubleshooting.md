@@ -2,6 +2,8 @@
 
 Use this table to map symptoms to next actions quickly.
 
+Fail-fast policy: no silent fallbacks, no provider auto-switching, and provider/model errors must be surfaced and fixed.
+
 | Symptom | Likely cause | Action | Diagnostic command |
 |---|---|---|---|
 | `Invalid username or token` | Bad API key/token or wrong provider account | Re-check the configured key for the selected provider, rotate if needed, and rerun a minimal summarize command. | `python3 -c 'import os; print("OPENAI_API_KEY set" if os.getenv("OPENAI_API_KEY") else "OPENAI_API_KEY missing")'` |

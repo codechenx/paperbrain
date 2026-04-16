@@ -36,25 +36,12 @@ class SummaryProvider:
         self.summary_model = self.config.summary_model
         # validate and parse explicit provider:model syntax
         self.parsed = parse_summary_model(self.summary_model)
+        if not self.config.openai_api_key.strip():
+            raise ValueError("OpenAI API key is required for embeddings")
         self.openai_client = OpenAIClient(api_key=self.config.openai_api_key)
         self.llm = self._build_llm()
         self.parser = DoclingParser()
         self.embeddings = OpenAIEmbeddingAdapter(client=self.openai_client, model=self.config.embedding_model)
-
-    def _is_gemini_summary_model(self, summary_model: str) -> bool:
-        return summary_model.strip().lower().startswith("gemini-")
-
-    def _is_ollama_summary_model(self, summary_model: str) -> bool:
-        return summary_model.strip().lower().startswith("ollama:")
-
-    def _strip_ollama_model_prefix(self, summary_model: str) -> str:
-        stripped = summary_model.strip()
-        if not self._is_ollama_summary_model(stripped):
-            raise ValueError("Summary model must start with ollama:")
-        model = stripped[len("ollama:") :].strip()
-        if not model:
-            raise ValueError("Ollama summary model must include a model name after 'ollama:'")
-        return model
 
     def _build_llm(self) -> LLMAdapter:
         provider = self.parsed.provider

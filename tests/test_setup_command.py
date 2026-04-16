@@ -28,7 +28,7 @@ def test_run_setup_writes_project_config(tmp_path: Path) -> None:
         database_url="postgresql://localhost:5432/paperbrain",
         openai_api_key="sk-test",
         gemini_api_key="gm-test",
-        summary_model="gpt-4.1-mini",
+        summary_model="openai:gpt-4.1-mini",
         embedding_model="text-embedding-3-small",
         config_path=config_path,
         test_connections=False,
@@ -38,7 +38,7 @@ def test_run_setup_writes_project_config(tmp_path: Path) -> None:
     assert loaded.database_url == "postgresql://localhost:5432/paperbrain"
     assert loaded.openai_api_key == "sk-test"
     assert loaded.gemini_api_key == "gm-test"
-    assert loaded.summary_model == "gpt-4.1-mini"
+    assert loaded.summary_model == "openai:gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
     assert message == f"Saved configuration to {config_path}"
 
@@ -69,7 +69,7 @@ def test_run_setup_validates_database_and_openai(monkeypatch: Any, tmp_path: Pat
     run_setup(
         database_url="postgresql://localhost:5432/paperbrain",
         openai_api_key="sk-test",
-        summary_model="gpt-4.1-mini",
+        summary_model="openai:gpt-4.1-mini",
         embedding_model="text-embedding-3-small",
         config_path=tmp_path / "paperbrain.conf",
         test_connections=True,
@@ -118,7 +118,7 @@ def test_run_setup_uses_gemini_summary_validation_for_gemini_models(
         database_url="postgresql://localhost:5432/paperbrain",
         openai_api_key="sk-test",
         gemini_api_key="gm-test",
-        summary_model="gemini-2.5-flash",
+        summary_model="gemini:gemini-2.5-flash",
         embedding_model="text-embedding-3-small",
         config_path=tmp_path / "paperbrain.conf",
         test_connections=True,
@@ -203,8 +203,7 @@ def test_cli_setup_accepts_openai_options(monkeypatch: Any) -> None:
             "postgresql://localhost:5432/paperbrain",
             "--openai-api-key",
             "sk-test",
-            "--summary-model",
-            "gpt-4.1-mini",
+            "--summary-model", "openai:gpt-4.1-mini",
             "--embedding-model",
             "text-embedding-3-small",
         ],
@@ -214,7 +213,7 @@ def test_cli_setup_accepts_openai_options(monkeypatch: Any) -> None:
     assert "ok" in result.output
     assert calls["database_url"] == "postgresql://localhost:5432/paperbrain"
     assert calls["openai_api_key"] == "sk-test"
-    assert calls["summary_model"] == "gpt-4.1-mini"
+    assert calls["summary_model"] == "openai:gpt-4.1-mini"
     assert calls["embedding_model"] == "text-embedding-3-small"
     assert calls["config_path"] == Path.home() / ".config" / "paperbrain" / "paperbrain.conf"
     assert calls["test_connections"] is True
@@ -239,8 +238,7 @@ def test_cli_setup_accepts_gemini_api_key(monkeypatch: Any) -> None:
             "sk-test",
             "--gemini-api-key",
             "gm-test",
-            "--summary-model",
-            "gemini-2.5-flash",
+            "--summary-model", "gemini:gemini-2.5-flash",
             "--embedding-model",
             "text-embedding-3-small",
         ],
@@ -435,7 +433,7 @@ def test_run_setup_gemini_validation_failure_has_context(monkeypatch: Any, tmp_p
         run_setup(
             database_url="postgresql://localhost:5432/paperbrain",
             openai_api_key="sk-test",
-            summary_model="gemini-2.5-flash",
+            summary_model="gemini:gemini-2.5-flash",
             config_path=tmp_path / "paperbrain.conf",
             test_connections=True,
         )
@@ -516,6 +514,7 @@ def test_build_runtime_rejects_unprefixed_summary_model(monkeypatch: Any, tmp_pa
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
 
     with pytest.raises(ValueError, match="Summary model must be prefixed with one of: openai:, gemini:, ollama:"):
         build_runtime(config_path)
@@ -539,6 +538,7 @@ def test_build_runtime_rejects_unknown_summary_provider_prefix(monkeypatch: Any,
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
 
     with pytest.raises(ValueError, match="Unknown summary provider prefix"):
         build_runtime(config_path)
@@ -551,7 +551,7 @@ def test_build_runtime_requires_gemini_key_for_gemini_summary_model(
         database_url="postgresql://localhost:5432/paperbrain",
         openai_api_key="sk-runtime",
         gemini_api_key="",
-        summary_model="gemini-2.5-flash",
+        summary_model="gemini:gemini-2.5-flash",
         embedding_model="text-embedding-3-small",
     )
     config_path = tmp_path / "config" / "paperbrain.conf"
@@ -564,6 +564,7 @@ def test_build_runtime_requires_gemini_key_for_gemini_summary_model(
             return config
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
 
     with pytest.raises(ValueError, match="Gemini API key is required for Gemini summary models"):
         build_runtime(config_path)
@@ -576,7 +577,7 @@ def test_build_runtime_requires_openai_key_for_gemini_summary_model(
         database_url="postgresql://localhost:5432/paperbrain",
         openai_api_key="",
         gemini_api_key="gm-runtime",
-        summary_model="gemini-2.5-flash",
+        summary_model="gemini:gemini-2.5-flash",
         embedding_model="text-embedding-3-small",
     )
     config_path = tmp_path / "config" / "paperbrain.conf"
@@ -597,6 +598,7 @@ def test_build_runtime_requires_openai_key_for_gemini_summary_model(
             _ = api_key
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
     monkeypatch.setattr("paperbrain.cli.GeminiClient", FakeGeminiClient, raising=False)
 
@@ -610,7 +612,7 @@ def test_build_runtime_requires_openai_key_for_openai_summary_model(
     config = AppConfig(
         database_url="postgresql://localhost:5432/paperbrain",
         openai_api_key="",
-        summary_model="gpt-4.1-mini",
+        summary_model="openai:gpt-4.1-mini",
         embedding_model="text-embedding-3-small",
     )
     config_path = tmp_path / "config" / "paperbrain.conf"
@@ -623,6 +625,7 @@ def test_build_runtime_requires_openai_key_for_openai_summary_model(
             return config
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
 
     with pytest.raises(ValueError, match="OpenAI API key is required for embeddings"):
         build_runtime(config_path)
@@ -648,6 +651,7 @@ def test_build_runtime_requires_ollama_key_for_ollama_summary_model(
             return config
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
 
     with pytest.raises(ValueError, match="Ollama API key is required for Ollama summary models"):
         build_runtime(config_path)
@@ -682,6 +686,7 @@ def test_build_runtime_requires_ollama_base_url_for_ollama_summary_model(
             _ = api_key, base_url
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
     monkeypatch.setattr("paperbrain.cli.OllamaCloudClient", FakeOllamaCloudClient, raising=False)
 
@@ -718,6 +723,7 @@ def test_build_runtime_rejects_empty_ollama_summary_model_suffix(
             _ = base_url
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
     monkeypatch.setattr("paperbrain.cli.OllamaCloudClient", FakeOllamaCloudClient, raising=False)
 
@@ -916,7 +922,7 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
     config = AppConfig(
         database_url="postgresql://localhost:5432/paperbrain",
         openai_api_key="sk-runtime",
-        summary_model="gpt-4.1-mini",
+        summary_model="openai:gpt-4.1-mini",
         embedding_model="text-embedding-3-small",
     )
     config_path = tmp_path / "config" / "paperbrain.conf"
@@ -960,6 +966,7 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
     fake_repo = object()
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
     monkeypatch.setattr("paperbrain.cli.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
     monkeypatch.setattr("paperbrain.cli.DoclingParser", FakeParser)
@@ -992,7 +999,7 @@ def test_cli_search_uses_runtime_config_and_outputs_results(monkeypatch: Any, tm
     config = AppConfig(
         database_url="postgresql://localhost:5432/paperbrain",
         openai_api_key="sk-runtime",
-        summary_model="gpt-4.1-mini",
+        summary_model="openai:gpt-4.1-mini",
         embedding_model="text-embedding-3-small",
     )
 
@@ -1029,6 +1036,7 @@ def test_cli_search_uses_runtime_config_and_outputs_results(monkeypatch: Any, tm
     fake_repo = object()
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
     monkeypatch.setattr("paperbrain.cli.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
     monkeypatch.setattr("paperbrain.cli.SearchService", FakeSearchService)
@@ -1060,7 +1068,7 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
     config = AppConfig(
         database_url="postgresql://localhost:5432/paperbrain",
         openai_api_key="sk-runtime",
-        summary_model="gpt-4.1-mini",
+        summary_model="openai:gpt-4.1-mini",
         embedding_model="text-embedding-3-small",
     )
 
@@ -1097,6 +1105,7 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
     fake_repo = object()
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
     monkeypatch.setattr("paperbrain.cli.OpenAISummaryAdapter", FakeSummaryAdapter)
     monkeypatch.setattr("paperbrain.cli.SummarizeService", FakeSummarizeService)
@@ -1110,7 +1119,7 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
     assert "Summarized cards: papers=3 people=2 topics=1" in result.output
     assert calls["config_path"] == config_path
     assert calls["api_key"] == "sk-runtime"
-    assert calls["summary_model"] == "gpt-4.1-mini"
+    assert calls["summary_model"] == "openai:gpt-4.1-mini"
     assert calls["summary_client_seen"] is True
     assert calls["connect"] == ("postgresql://localhost:5432/paperbrain", False)
     assert calls["repo"] is fake_repo
@@ -1127,7 +1136,7 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
         database_url="postgresql://localhost:5432/paperbrain",
         openai_api_key="sk-runtime",
         gemini_api_key="gm-runtime",
-        summary_model="gemini-2.5-flash",
+        summary_model="gemini:gemini-2.5-flash",
         embedding_model="text-embedding-3-small",
     )
 
@@ -1177,6 +1186,7 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
         pytest.fail("OpenAI summary adapter must not be used for Gemini models")
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
     monkeypatch.setattr("paperbrain.cli.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
     monkeypatch.setattr("paperbrain.cli.GeminiClient", FakeGeminiClient, raising=False)
@@ -1196,7 +1206,7 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
     assert calls["embedding_model"] == "text-embedding-3-small"
     assert calls["embedding_client_seen"] is True
     assert calls["gemini_api_key"] == "gm-runtime"
-    assert calls["summary_model"] == "gemini-2.5-flash"
+    assert calls["summary_model"] == "gemini:gemini-2.5-flash"
     assert calls["summary_client_seen"] is True
     assert calls["connect"] == ("postgresql://localhost:5432/paperbrain", False)
     assert calls["repo"] is fake_repo
@@ -1264,6 +1274,7 @@ def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
         pytest.fail("OpenAI summary adapter must not be used for Ollama models")
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
     monkeypatch.setattr("paperbrain.cli.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
     monkeypatch.setattr("paperbrain.cli.OllamaCloudClient", FakeOllamaCloudClient, raising=False)
@@ -1289,3 +1300,107 @@ def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
     assert calls["repo"] is fake_repo
     assert calls["llm_seen"] is True
     assert calls["run_force_all"] is True
+
+def test_runtime_prefixed_provider_positive_paths(monkeypatch: Any, tmp_path: Path) -> None:
+    # openai positive path
+    config_openai = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        summary_model="openai:gpt-4.1-mini",
+        embedding_model="text-embedding-3-small",
+    )
+    config_path_openai = tmp_path / "config" / "paperbrain_openai.conf"
+
+    class FakeConfigStoreOpenAI:
+        def __init__(self, path: Path) -> None:
+            assert path == config_path_openai
+
+        def load(self) -> AppConfig:
+            return config_openai
+
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            _ = api_key
+
+        def embed(self, chunks: list[str], model: str) -> list[list[float]]:
+            return [[0.1]]
+
+        def summarize(self, text: str, model: str) -> str:
+            return "ok"
+
+    class FakeOpenAIEmbeddingAdapter:
+        def __init__(self, client, model):
+            _ = client, model
+
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStoreOpenAI)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIEmbeddingAdapter", FakeOpenAIEmbeddingAdapter)
+
+    rt = build_runtime(config_path_openai)
+    assert rt.llm is not None
+    assert rt.embeddings is not None
+
+    # gemini positive path
+    config_gemini = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        gemini_api_key="gm-runtime",
+        summary_model="gemini:gemini-2.5-flash",
+        embedding_model="text-embedding-3-small",
+    )
+    config_path_gemini = tmp_path / "config" / "paperbrain_gemini.conf"
+
+    class FakeConfigStoreGemini:
+        def __init__(self, path: Path) -> None:
+            assert path == config_path_gemini
+
+        def load(self) -> AppConfig:
+            return config_gemini
+
+    class FakeGeminiClient:
+        def __init__(self, api_key: str) -> None:
+            _ = api_key
+
+        def summarize(self, text: str, model: str) -> str:
+            return "ok"
+
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStoreGemini)
+    monkeypatch.setattr("paperbrain.summary_provider.GeminiClient", FakeGeminiClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIEmbeddingAdapter", FakeOpenAIEmbeddingAdapter)
+
+    rt = build_runtime(config_path_gemini)
+    assert rt.llm is not None
+
+    # ollama positive path
+    config_ollama = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        ollama_api_key="ol-runtime",
+        ollama_base_url="https://ollama.example",
+        summary_model="ollama:llama3.2",
+        embedding_model="text-embedding-3-small",
+    )
+    config_path_ollama = tmp_path / "config" / "paperbrain_ollama.conf"
+
+    class FakeConfigStoreOllama:
+        def __init__(self, path: Path) -> None:
+            assert path == config_path_ollama
+
+        def load(self) -> AppConfig:
+            return config_ollama
+
+    class FakeOllamaCloudClient:
+        def __init__(self, api_key: str, base_url: str) -> None:
+            _ = api_key, base_url
+
+        def summarize(self, text: str, model: str) -> str:
+            return "ok"
+
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStoreOllama)
+    monkeypatch.setattr("paperbrain.summary_provider.OllamaCloudClient", FakeOllamaCloudClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIEmbeddingAdapter", FakeOpenAIEmbeddingAdapter)
+
+    rt = build_runtime(config_path_ollama)
+    assert rt.llm is not None

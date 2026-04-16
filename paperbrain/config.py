@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import tomllib
 
-DEFAULT_SUMMARY_MODEL = "gpt-4.1-mini"
+DEFAULT_SUMMARY_MODEL = "openai:gpt-4.1-mini"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 SUPPORTED_1536D_EMBEDDING_MODELS = {DEFAULT_EMBEDDING_MODEL}
 

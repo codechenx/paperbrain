@@ -71,11 +71,11 @@ Rationale:
 
 ## Testing strategy
 
-1. Validate the skill by executing representative workflow scenarios:
-   - normal run with configured provider,
-   - missing credential scenario,
-   - duplicate-export diagnostic scenario.
-2. Confirm generated run summaries include required fields and actionable failure guidance.
+1. Validate the skill with contract-level scenario simulation and structural assertions (live end-to-end command execution is optional, not required for test coverage):
+   - normal-run contract simulation,
+   - provider-auth-failure contract simulation,
+   - duplicate-export/source_path mismatch contract simulation.
+2. Confirm run-summary and scenario report templates include required fields and actionable failure guidance.
 3. Ensure instructions stay consistent with current repository commands and config defaults.
 
 ## Acceptance criteria
@@ -84,4 +84,4 @@ Rationale:
 2. Workflow checklist enforces ingest/summarize/export plus post-run validation.
 3. References are explicitly trigger-driven and cover commands, provider troubleshooting, and dedupe/export checks.
 4. Skill guidance requires explicit prefixed summary model selectors and explicit failure reporting.
-5. A user can run the workflow end-to-end with consistent output format and clear next actions on failure.
+5. Skill guidance and scenario contracts cover normal run, provider-auth failure, and duplicate-export/source_path mismatch flows with consistent output format and clear next actions; this can be validated via contract-level simulation/structural assertions without requiring live end-to-end command execution in tests.

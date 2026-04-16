@@ -11,6 +11,15 @@ from paperbrain.config import AppConfig, ConfigStore
 from paperbrain.models import SummaryStats
 from paperbrain.services.init import run_init
 from paperbrain.services.setup import run_setup
+from inspect import signature
+
+
+def test_run_setup_default_config_path_is_home() -> None:
+    sig = signature(run_setup)
+    param = sig.parameters["config_path"]
+    default = param.default
+    expected = Path.home() / ".config" / "paperbrain" / "paperbrain.conf"
+    assert default == expected
 
 
 def test_run_setup_writes_project_config(tmp_path: Path) -> None:

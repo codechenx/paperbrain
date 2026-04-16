@@ -92,7 +92,7 @@ def run_setup(
     ollama_base_url: str = "https://ollama.com",
     summary_model: str = DEFAULT_SUMMARY_MODEL,
     embedding_model: str = DEFAULT_EMBEDDING_MODEL,
-    config_path: Path = Path("./config/paperbrain.conf"),
+    config_path: Path = Path.home() / ".config" / "paperbrain" / "paperbrain.conf",
     test_connections: bool = True,
 ) -> str:
     if not database_url.startswith("postgresql://"):

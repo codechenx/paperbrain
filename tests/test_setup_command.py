@@ -597,8 +597,8 @@ def test_build_runtime_requires_openai_key_for_gemini_summary_model(
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
-    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
-    monkeypatch.setattr("paperbrain.cli.GeminiClient", FakeGeminiClient, raising=False)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.summary_provider.GeminiClient", FakeGeminiClient, raising=False)
 
     with pytest.raises(ValueError, match="OpenAI API key is required for embeddings"):
         build_runtime(config_path)
@@ -685,8 +685,8 @@ def test_build_runtime_requires_ollama_base_url_for_ollama_summary_model(
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
-    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
-    monkeypatch.setattr("paperbrain.cli.OllamaCloudClient", FakeOllamaCloudClient, raising=False)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OllamaCloudClient", FakeOllamaCloudClient, raising=False)
 
     with pytest.raises(ValueError, match="Ollama base URL is required for Ollama summary models"):
         build_runtime(config_path)
@@ -722,8 +722,8 @@ def test_build_runtime_rejects_empty_ollama_summary_model_suffix(
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
-    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
-    monkeypatch.setattr("paperbrain.cli.OllamaCloudClient", FakeOllamaCloudClient, raising=False)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OllamaCloudClient", FakeOllamaCloudClient, raising=False)
 
     with pytest.raises(
         ValueError, match="Ollama summary model must include a model name after 'ollama:'"
@@ -965,9 +965,9 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
-    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
-    monkeypatch.setattr("paperbrain.cli.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
-    monkeypatch.setattr("paperbrain.cli.DoclingParser", FakeParser)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
+    monkeypatch.setattr("paperbrain.summary_provider.DoclingParser", FakeParser)
     monkeypatch.setattr("paperbrain.cli.IngestService", FakeIngestService)
     monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
     monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
@@ -1035,8 +1035,8 @@ def test_cli_search_uses_runtime_config_and_outputs_results(monkeypatch: Any, tm
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
-    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
-    monkeypatch.setattr("paperbrain.cli.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
     monkeypatch.setattr("paperbrain.cli.SearchService", FakeSearchService)
     monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
     monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
@@ -1104,8 +1104,8 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
-    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
-    monkeypatch.setattr("paperbrain.cli.OpenAISummaryAdapter", FakeSummaryAdapter)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAISummaryAdapter", FakeSummaryAdapter)
     monkeypatch.setattr("paperbrain.cli.SummarizeService", FakeSummarizeService)
     monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
     monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
@@ -1117,7 +1117,7 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
     assert "Summarized cards: papers=3 people=2 topics=1" in result.output
     assert calls["config_path"] == config_path
     assert calls["api_key"] == "sk-runtime"
-    assert calls["summary_model"] == "openai:gpt-4.1-mini"
+    assert calls["summary_model"] == "gpt-4.1-mini"
     assert calls["summary_client_seen"] is True
     assert calls["connect"] == ("postgresql://localhost:5432/paperbrain", False)
     assert calls["repo"] is fake_repo
@@ -1185,11 +1185,11 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
-    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
-    monkeypatch.setattr("paperbrain.cli.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
-    monkeypatch.setattr("paperbrain.cli.GeminiClient", FakeGeminiClient, raising=False)
-    monkeypatch.setattr("paperbrain.cli.GeminiSummaryAdapter", FakeGeminiSummaryAdapter, raising=False)
-    monkeypatch.setattr("paperbrain.cli.OpenAISummaryAdapter", fail_openai_summary_adapter)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
+    monkeypatch.setattr("paperbrain.summary_provider.GeminiClient", FakeGeminiClient, raising=False)
+    monkeypatch.setattr("paperbrain.summary_provider.GeminiSummaryAdapter", FakeGeminiSummaryAdapter, raising=False)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAISummaryAdapter", fail_openai_summary_adapter)
     monkeypatch.setattr("paperbrain.cli.SummarizeService", FakeSummarizeService)
     monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
     monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
@@ -1204,7 +1204,7 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
     assert calls["embedding_model"] == "text-embedding-3-small"
     assert calls["embedding_client_seen"] is True
     assert calls["gemini_api_key"] == "gm-runtime"
-    assert calls["summary_model"] == "gemini:gemini-2.5-flash"
+    assert calls["summary_model"] == "gemini-2.5-flash"
     assert calls["summary_client_seen"] is True
     assert calls["connect"] == ("postgresql://localhost:5432/paperbrain", False)
     assert calls["repo"] is fake_repo
@@ -1273,11 +1273,11 @@ def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
 
     monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
-    monkeypatch.setattr("paperbrain.cli.OpenAIClient", FakeOpenAIClient)
-    monkeypatch.setattr("paperbrain.cli.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
-    monkeypatch.setattr("paperbrain.cli.OllamaCloudClient", FakeOllamaCloudClient, raising=False)
-    monkeypatch.setattr("paperbrain.cli.OllamaSummaryAdapter", FakeOllamaSummaryAdapter, raising=False)
-    monkeypatch.setattr("paperbrain.cli.OpenAISummaryAdapter", fail_openai_summary_adapter)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
+    monkeypatch.setattr("paperbrain.summary_provider.OllamaCloudClient", FakeOllamaCloudClient, raising=False)
+    monkeypatch.setattr("paperbrain.summary_provider.OllamaSummaryAdapter", FakeOllamaSummaryAdapter, raising=False)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAISummaryAdapter", fail_openai_summary_adapter)
     monkeypatch.setattr("paperbrain.cli.SummarizeService", FakeSummarizeService)
     monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
     monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)

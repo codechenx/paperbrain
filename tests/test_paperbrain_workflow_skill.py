@@ -4,6 +4,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_DIR = ROOT / "skills" / "paperbrain-workflow"
 SKILL_FILE = SKILL_DIR / "SKILL.md"
+EXPECTED_FRONTMATTER = {
+    "name": "paperbrain-workflow",
+    "description": "Run and troubleshoot PaperBrain ingest/summarize/export workflows with validation and duplicate checks.",
+}
 REQUIRED_FILES = [
     SKILL_FILE,
     SKILL_DIR / "references" / "commands.md",
@@ -19,9 +23,13 @@ def test_skill_package_files_exist() -> None:
 
 def test_skill_frontmatter_has_required_metadata() -> None:
     content = SKILL_FILE.read_text(encoding="utf-8")
-    assert content.startswith("---\n")
-    assert "name:" in content
-    assert "description:" in content
+    lines = content.splitlines()
+    assert lines[0] == "---"
+    assert "---" in lines[1:]
+    frontmatter_end = lines[1:].index("---") + 1
+    frontmatter_lines = lines[1:frontmatter_end]
+    metadata = dict(line.split(": ", maxsplit=1) for line in frontmatter_lines)
+    assert metadata == EXPECTED_FRONTMATTER
 
 
 def test_skill_markdown_omits_agent_name_mentions() -> None:

@@ -1,6 +1,6 @@
 ---
 name: paperbrain-workflow
-description: Core workflow references for PaperBrain skill execution.
+description: Run and troubleshoot PaperBrain ingest/summarize/export workflows with validation and duplicate checks.
 ---
 
 # PaperBrain Workflow

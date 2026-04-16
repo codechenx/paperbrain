@@ -37,6 +37,60 @@ def test_config_stores_openai_and_gemini_fields(tmp_path: Path) -> None:
     assert loaded.embedding_model == "text-embedding-3-small"
 
 
+def test_config_stores_ollama_fields(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+    store = ConfigStore(config_path)
+    store.save(
+        database_url="postgresql://localhost:5432/paperbrain",
+        ollama_api_key="ol-test",
+        ollama_base_url="https://ollama.local",
+    )
+
+    loaded = store.load()
+
+    assert loaded.ollama_api_key == "ol-test"
+    assert loaded.ollama_base_url == "https://ollama.local"
+
+
+def test_save_normalizes_ollama_base_url(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+    store = ConfigStore(config_path)
+    store.save(
+        database_url="postgresql://localhost:5432/paperbrain",
+        ollama_base_url="  https://ollama.local/base  ",
+    )
+
+    loaded = store.load()
+
+    assert loaded.ollama_base_url == "https://ollama.local/base"
+
+
+def test_save_rejects_blank_ollama_base_url(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+    store = ConfigStore(config_path)
+
+    with pytest.raises(ValueError, match="non-empty ollama_base_url"):
+        store.save(
+            database_url="postgresql://localhost:5432/paperbrain",
+            ollama_base_url="   \n\t ",
+        )
+
+
+def test_load_rejects_blank_ollama_base_url(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+    config_path.write_text(
+        (
+            "[paperbrain]\n"
+            'database_url = "postgresql://localhost:5432/paperbrain"\n'
+            'ollama_base_url = "   "\n'
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="non-empty ollama_base_url"):
+        ConfigStore(config_path).load()
+
+
 def test_load_legacy_config_uses_model_defaults(tmp_path: Path) -> None:
     config_path = tmp_path / "paperbrain.conf"
     config_path.write_text(
@@ -46,6 +100,8 @@ def test_load_legacy_config_uses_model_defaults(tmp_path: Path) -> None:
     loaded = ConfigStore(config_path).load()
 
     assert loaded.gemini_api_key == ""
+    assert loaded.ollama_api_key == ""
+    assert loaded.ollama_base_url == "https://ollama.com"
     assert loaded.summary_model == "gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
 
@@ -106,6 +162,8 @@ def test_save_sets_restrictive_permissions(tmp_path: Path) -> None:
     [
         ("summary_model", "123", "Invalid summary_model in configuration file"),
         ("embedding_model", "456", "Invalid embedding_model in configuration file"),
+        ("ollama_api_key", "789", "Invalid ollama_api_key in configuration file"),
+        ("ollama_base_url", "789", "Invalid ollama_base_url in configuration file"),
     ],
 )
 def test_load_rejects_non_string_model_values(

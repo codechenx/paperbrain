@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from paperbrain.adapters.ollama_client import OllamaCloudClient
 from paperbrain.adapters.openai_client import OpenAIClient
 from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_SUMMARY_MODEL
 from paperbrain.config import ConfigStore, validate_embedding_model_for_schema
@@ -53,10 +54,42 @@ def _is_gemini_summary_model(summary_model: str) -> bool:
     return summary_model.strip().lower().startswith("gemini-")
 
 
+def _is_ollama_summary_model(summary_model: str) -> bool:
+    return summary_model.strip().lower().startswith("ollama:")
+
+
+def _strip_ollama_model_prefix(summary_model: str) -> str:
+    stripped = summary_model.strip()
+    if not _is_ollama_summary_model(stripped):
+        raise ValueError("Summary model must start with ollama:")
+    model = stripped[len("ollama:") :].strip()
+    if not model:
+        raise ValueError("Ollama summary model must include a model name after 'ollama:'")
+    return model
+
+
+def _validate_ollama_summary_connection(
+    ollama_api_key: str,
+    ollama_base_url: str,
+    summary_model: str,
+) -> None:
+    if not ollama_api_key.strip():
+        raise ValueError("Ollama API key is required when testing connections")
+    normalized_base_url = ollama_base_url.strip()
+    if not normalized_base_url:
+        raise ValueError("Ollama base URL is required when testing connections")
+    model = _strip_ollama_model_prefix(summary_model)
+    client = OllamaCloudClient(api_key=ollama_api_key, base_url=normalized_base_url)
+    probe = "paperbrain connectivity check"
+    client.summarize(probe, model=model)
+
+
 def run_setup(
     database_url: str,
     openai_api_key: str = "",
     gemini_api_key: str = "",
+    ollama_api_key: str = "",
+    ollama_base_url: str = "https://ollama.com",
     summary_model: str = DEFAULT_SUMMARY_MODEL,
     embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     config_path: Path = Path("./config/paperbrain.conf"),
@@ -75,12 +108,13 @@ def run_setup(
         except Exception as exc:
             raise RuntimeError(f"Setup failed during database validation: {exc}") from exc
         summary_uses_gemini = _is_gemini_summary_model(summary_model)
+        summary_uses_ollama = _is_ollama_summary_model(summary_model)
         try:
             openai_client = _validate_openai_embedding_connection(
                 openai_api_key=openai_api_key,
                 embedding_model=embedding_model,
             )
-            if not summary_uses_gemini:
+            if not summary_uses_gemini and not summary_uses_ollama:
                 _validate_openai_summary_connection(openai_client, summary_model)
         except Exception as exc:
             raise RuntimeError(f"Setup failed during OpenAI validation: {exc}") from exc
@@ -92,11 +126,22 @@ def run_setup(
                 )
             except Exception as exc:
                 raise RuntimeError(f"Setup failed during Gemini validation: {exc}") from exc
+        if summary_uses_ollama:
+            try:
+                _validate_ollama_summary_connection(
+                    ollama_api_key=ollama_api_key,
+                    ollama_base_url=ollama_base_url,
+                    summary_model=summary_model,
+                )
+            except Exception as exc:
+                raise RuntimeError(f"Setup failed during Ollama validation: {exc}") from exc
     store = ConfigStore(config_path)
     store.save(
         database_url=database_url,
         openai_api_key=openai_api_key,
         gemini_api_key=gemini_api_key,
+        ollama_api_key=ollama_api_key,
+        ollama_base_url=ollama_base_url,
         summary_model=summary_model,
         embedding_model=embedding_model,
     )

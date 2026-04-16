@@ -14,6 +14,8 @@ class AppConfig:
     summary_model: str
     embedding_model: str
     gemini_api_key: str = ""
+    ollama_api_key: str = ""
+    ollama_base_url: str = "https://ollama.com"
 
 
 def validate_embedding_model_for_schema(embedding_model: str) -> None:
@@ -26,6 +28,13 @@ def validate_embedding_model_for_schema(embedding_model: str) -> None:
         )
 
 
+def normalize_ollama_base_url(ollama_base_url: str) -> str:
+    normalized = ollama_base_url.strip()
+    if not normalized:
+        raise ValueError("Missing non-empty ollama_base_url in configuration file")
+    return normalized
+
+
 class ConfigStore:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -35,22 +44,29 @@ class ConfigStore:
         database_url: str,
         openai_api_key: str = "",
         gemini_api_key: str = "",
+        ollama_api_key: str = "",
+        ollama_base_url: str = "https://ollama.com",
         summary_model: str = DEFAULT_SUMMARY_MODEL,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     ) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         validate_embedding_model_for_schema(embedding_model)
+        normalized_ollama_base_url = normalize_ollama_base_url(ollama_base_url)
         body = (
             "[paperbrain]\n"
             'database_url = "{database_url}"\n'
             'openai_api_key = "{openai_api_key}"\n'
             'gemini_api_key = "{gemini_api_key}"\n'
+            'ollama_api_key = "{ollama_api_key}"\n'
+            'ollama_base_url = "{ollama_base_url}"\n'
             'summary_model = "{summary_model}"\n'
             'embedding_model = "{embedding_model}"\n'
         ).format(
             database_url=database_url.replace("\\", "\\\\").replace('"', '\\"'),
             openai_api_key=openai_api_key.replace("\\", "\\\\").replace('"', '\\"'),
             gemini_api_key=gemini_api_key.replace("\\", "\\\\").replace('"', '\\"'),
+            ollama_api_key=ollama_api_key.replace("\\", "\\\\").replace('"', '\\"'),
+            ollama_base_url=normalized_ollama_base_url.replace("\\", "\\\\").replace('"', '\\"'),
             summary_model=summary_model.replace("\\", "\\\\").replace('"', '\\"'),
             embedding_model=embedding_model.replace("\\", "\\\\").replace('"', '\\"'),
         )
@@ -73,6 +89,13 @@ class ConfigStore:
         gemini_api_key = section.get("gemini_api_key", "")
         if not isinstance(gemini_api_key, str):
             raise ValueError("Invalid gemini_api_key in configuration file")
+        ollama_api_key = section.get("ollama_api_key", "")
+        if not isinstance(ollama_api_key, str):
+            raise ValueError("Invalid ollama_api_key in configuration file")
+        ollama_base_url = section.get("ollama_base_url", "https://ollama.com")
+        if not isinstance(ollama_base_url, str):
+            raise ValueError("Invalid ollama_base_url in configuration file")
+        normalized_ollama_base_url = normalize_ollama_base_url(ollama_base_url)
         summary_model = section.get("summary_model", DEFAULT_SUMMARY_MODEL)
         if not isinstance(summary_model, str):
             raise ValueError("Invalid summary_model in configuration file")
@@ -86,4 +109,6 @@ class ConfigStore:
             summary_model=summary_model,
             embedding_model=embedding_model,
             gemini_api_key=gemini_api_key,
+            ollama_api_key=ollama_api_key,
+            ollama_base_url=normalized_ollama_base_url,
         )

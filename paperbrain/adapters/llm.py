@@ -788,3 +788,7 @@ class OpenAISummaryAdapter:
 
 class GeminiSummaryAdapter(OpenAISummaryAdapter):
     pass
+
+
+class OllamaSummaryAdapter(OpenAISummaryAdapter):
+    pass

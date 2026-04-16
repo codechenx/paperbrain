@@ -1,0 +1,75 @@
+from dataclasses import dataclass
+
+from paperbrain.adapters.docling import DoclingParser
+from paperbrain.adapters.openai_client import OpenAIClient
+from paperbrain.adapters.llm import LLMAdapter, GeminiSummaryAdapter, OllamaSummaryAdapter, OpenAISummaryAdapter
+from paperbrain.adapters.gemini_client import GeminiClient
+from paperbrain.adapters.ollama_client import OllamaCloudClient
+from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
+from paperbrain.config import ConfigStore
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedSummaryModel:
+    provider: str
+    model: str
+
+
+def parse_summary_model(summary_model: str) -> ParsedSummaryModel:
+    raw = (summary_model or "").strip()
+    if ":" not in raw:
+        raise ValueError("Summary model must be prefixed with one of: openai:, gemini:, ollama:")
+    provider, model = raw.split(":", 1)
+    provider = provider.strip().lower()
+    model = model.strip()
+    allowed = {"openai", "gemini", "ollama"}
+    if provider not in allowed:
+        raise ValueError(f"Unknown summary provider prefix: {provider}")
+    if not model:
+        raise ValueError(f"{provider.capitalize()} summary model must include a model name after '{provider}:'")
+    return ParsedSummaryModel(provider=provider, model=model)
+
+
+class SummaryProvider:
+    def __init__(self, config_path):
+        self.config = ConfigStore(config_path).load()
+        self.summary_model = self.config.summary_model
+        # validate and parse explicit provider:model syntax
+        self.parsed = parse_summary_model(self.summary_model)
+        self.openai_client = OpenAIClient(api_key=self.config.openai_api_key)
+        self.llm = self._build_llm()
+        self.parser = DoclingParser()
+        self.embeddings = OpenAIEmbeddingAdapter(client=self.openai_client, model=self.config.embedding_model)
+
+    def _is_gemini_summary_model(self, summary_model: str) -> bool:
+        return summary_model.strip().lower().startswith("gemini-")
+
+    def _is_ollama_summary_model(self, summary_model: str) -> bool:
+        return summary_model.strip().lower().startswith("ollama:")
+
+    def _strip_ollama_model_prefix(self, summary_model: str) -> str:
+        stripped = summary_model.strip()
+        if not self._is_ollama_summary_model(stripped):
+            raise ValueError("Summary model must start with ollama:")
+        model = stripped[len("ollama:") :].strip()
+        if not model:
+            raise ValueError("Ollama summary model must include a model name after 'ollama:'")
+        return model
+
+    def _build_llm(self) -> LLMAdapter:
+        provider = self.parsed.provider
+        model = self.parsed.model
+        if provider == "gemini":
+            if not self.config.gemini_api_key.strip():
+                raise ValueError("Gemini API key is required for Gemini summary models")
+            summary_client = GeminiClient(api_key=self.config.gemini_api_key)
+            return GeminiSummaryAdapter(client=summary_client, model=model)
+        elif provider == "ollama":
+            if not self.config.ollama_api_key.strip():
+                raise ValueError("Ollama API key is required for Ollama summary models")
+            if not self.config.ollama_base_url.strip():
+                raise ValueError("Ollama base URL is required for Ollama summary models")
+            summary_client = OllamaCloudClient(api_key=self.config.ollama_api_key, base_url=self.config.ollama_base_url.strip())
+            return OllamaSummaryAdapter(client=summary_client, model=model)
+        else:
+            return OpenAISummaryAdapter(client=self.openai_client, model=model)

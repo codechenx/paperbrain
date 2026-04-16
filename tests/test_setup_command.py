@@ -498,6 +498,52 @@ def test_run_setup_rejects_embedding_models_incompatible_with_schema(tmp_path: P
         )
 
 
+def test_build_runtime_rejects_unprefixed_summary_model(monkeypatch: Any, tmp_path: Path) -> None:
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        summary_model="gpt-4.1-mini",
+        embedding_model="text-embedding-3-small",
+    )
+    config_path = tmp_path / "config" / "paperbrain.conf"
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            assert path == config_path
+
+        def load(self) -> AppConfig:
+            return config
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
+
+    with pytest.raises(ValueError, match="Summary model must be prefixed with one of: openai:, gemini:, ollama:"):
+        build_runtime(config_path)
+
+
+def test_build_runtime_rejects_unknown_summary_provider_prefix(monkeypatch: Any, tmp_path: Path) -> None:
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        summary_model="anthropic:claude-3-7-sonnet",
+        embedding_model="text-embedding-3-small",
+    )
+    config_path = tmp_path / "config" / "paperbrain.conf"
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            assert path == config_path
+
+        def load(self) -> AppConfig:
+            return config
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
+
+    with pytest.raises(ValueError, match="Unknown summary provider prefix"):
+        build_runtime(config_path)
+
+
 def test_build_runtime_requires_gemini_key_for_gemini_summary_model(
     monkeypatch: Any, tmp_path: Path
 ) -> None:

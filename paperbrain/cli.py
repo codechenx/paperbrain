@@ -32,7 +32,7 @@ from paperbrain.services.stats import run_stats
 from paperbrain.services.summarize import SummarizeService
 
 app = typer.Typer(no_args_is_help=True, help="PaperBrain CLI")
-DEFAULT_CONFIG_PATH = Path("./config/paperbrain.conf")
+DEFAULT_CONFIG_PATH = Path.home() / ".config" / "paperbrain" / "paperbrain.conf"
 
 
 @dataclass(slots=True)

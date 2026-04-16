@@ -216,7 +216,7 @@ def test_cli_setup_accepts_openai_options(monkeypatch: Any) -> None:
     assert calls["openai_api_key"] == "sk-test"
     assert calls["summary_model"] == "gpt-4.1-mini"
     assert calls["embedding_model"] == "text-embedding-3-small"
-    assert calls["config_path"] == Path("config/paperbrain.conf")
+    assert calls["config_path"] == Path.home() / ".config" / "paperbrain" / "paperbrain.conf"
     assert calls["test_connections"] is True
 
 

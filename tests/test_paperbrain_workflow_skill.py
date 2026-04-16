@@ -14,6 +14,23 @@ REQUIRED_FILES = [
     SKILL_DIR / "references" / "provider-troubleshooting.md",
     SKILL_DIR / "references" / "dedupe-and-export-checks.md",
 ]
+REQUIRED_SECTIONS = [
+    "## When to use this skill",
+    "## Workflow checklist",
+    "## Validation loop",
+    "## Completion gate",
+]
+REQUIRED_PREFIXES = ["openai:", "gemini:", "ollama:"]
+REQUIRED_TRIGGERS = [
+    "Read `references/commands.md` before running workflow commands.",
+    "If provider auth fails, read `references/provider-troubleshooting.md`.",
+    "If duplicate exports are suspected, read `references/dedupe-and-export-checks.md`.",
+]
+REFERENCE_EXPECTATIONS = {
+    "commands.md": "python3 -m pytest -q",
+    "provider-troubleshooting.md": "Invalid username or token",
+    "dedupe-and-export-checks.md": "source_path",
+}
 
 
 def test_skill_package_files_exist() -> None:
@@ -36,3 +53,28 @@ def test_skill_markdown_omits_agent_name_mentions() -> None:
     content = SKILL_FILE.read_text(encoding="utf-8").lower()
     assert "openclaw" not in content
     assert "hermes" not in content
+
+
+def test_skill_markdown_contains_required_sections() -> None:
+    content = SKILL_FILE.read_text(encoding="utf-8")
+    for section in REQUIRED_SECTIONS:
+        assert section in content
+
+
+def test_skill_markdown_requires_provider_prefixes() -> None:
+    content = SKILL_FILE.read_text(encoding="utf-8")
+    for prefix in REQUIRED_PREFIXES:
+        assert prefix in content
+
+
+def test_skill_markdown_contains_reference_triggers() -> None:
+    content = SKILL_FILE.read_text(encoding="utf-8")
+    for trigger in REQUIRED_TRIGGERS:
+        assert trigger in content
+
+
+def test_reference_documents_include_required_content() -> None:
+    references_dir = SKILL_DIR / "references"
+    for file_name, expected_text in REFERENCE_EXPECTATIONS.items():
+        content = (references_dir / file_name).read_text(encoding="utf-8")
+        assert expected_text in content

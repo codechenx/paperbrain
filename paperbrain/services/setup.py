@@ -75,10 +75,11 @@ def _validate_ollama_summary_connection(
 ) -> None:
     if not ollama_api_key.strip():
         raise ValueError("Ollama API key is required when testing connections")
-    if not ollama_base_url.strip():
+    normalized_base_url = ollama_base_url.strip()
+    if not normalized_base_url:
         raise ValueError("Ollama base URL is required when testing connections")
     model = _strip_ollama_model_prefix(summary_model)
-    client = OllamaCloudClient(api_key=ollama_api_key, base_url=ollama_base_url)
+    client = OllamaCloudClient(api_key=ollama_api_key, base_url=normalized_base_url)
     probe = "paperbrain connectivity check"
     client.summarize(probe, model=model)
 

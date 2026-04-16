@@ -10,6 +10,34 @@ Use this table to map symptoms to next actions quickly.
 | `429 Too Many Requests` | Rate/quota exhaustion | Wait/backoff, reduce batch scope, and rerun. If persistent, check provider quota dashboard. | `paperbrain summarize --config-path "$CONFIG_PATH" && paperbrain stats --config-path "$CONFIG_PATH"` |
 | `model not found` | Typo or unsupported model ID | Use explicit provider prefix and a valid model name (`openai:`, `gemini:`, `ollama:`). | `paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "gemini:gemini-1.5-flash" --config-path "$CONFIG_PATH" --test-connections` |
 
+## OpenAI
+
+- Diagnostics:
+  - `python3 -c 'import os; print("OPENAI_API_KEY set" if os.getenv("OPENAI_API_KEY") else "OPENAI_API_KEY missing")'`
+  - `paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "openai:gpt-4o-mini" --config-path "$CONFIG_PATH" --test-connections`
+- Actions:
+  - Rotate/regenerate `OPENAI_API_KEY` and reload shell environment.
+  - Confirm the selected `openai:` model is enabled for the account/project.
+
+## Gemini
+
+- Diagnostics:
+  - `python3 -c 'import os; print("GEMINI_API_KEY set" if os.getenv("GEMINI_API_KEY") else "GEMINI_API_KEY missing")'`
+  - `paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "gemini:gemini-1.5-flash" --config-path "$CONFIG_PATH" --test-connections`
+- Actions:
+  - Regenerate `GEMINI_API_KEY` if auth fails and verify it is exported in the active shell.
+  - Verify the selected `gemini:` model is available to the configured Google AI project.
+
+## Ollama
+
+- Diagnostics:
+  - `python3 -c 'import os; print("OLLAMA_HOST set" if os.getenv("OLLAMA_HOST") else "OLLAMA_HOST missing (default http://127.0.0.1:11434)")'`
+  - `ollama list`
+  - `paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "ollama:llama3.1" --config-path "$CONFIG_PATH" --test-connections`
+- Actions:
+  - Start/restart the Ollama daemon and ensure `OLLAMA_HOST` points to the correct host.
+  - Pull the configured `ollama:` model (`ollama pull llama3.1`) before retrying summarize.
+
 ## Quick isolation steps
 
 1. Confirm the summary model includes a valid provider prefix.

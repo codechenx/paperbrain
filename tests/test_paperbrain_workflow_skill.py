@@ -27,14 +27,25 @@ REQUIRED_TRIGGERS = [
     "If duplicate exports are suspected, read `references/dedupe-and-export-checks.md`.",
 ]
 REQUIRED_COMPLETION_FIELDS = [
+    "`provider_model`",
+    "`baseline_checks`",
+    "`ingest_result`",
+    "`summarize_result`",
+    "`export_result`",
     "`counts`",
     "`skipped_categories`",
     "`failure_categories`",
+    "`validation_findings`",
     "`next_actions`",
+]
+REQUIRED_FAILURE_DETAIL_FIELDS = [
+    "`symptom`",
+    "`likely_cause`",
+    "`diagnostic_command`",
 ]
 REFERENCE_EXPECTATIONS = {
     "commands.md": 'paperbrain summarize --config-path "$CONFIG_PATH"',
-    "provider-troubleshooting.md": "Invalid username or token",
+    "provider-troubleshooting.md": "## OpenAI",
     "dedupe-and-export-checks.md": "`source_path` mismatch check (absolute vs relative)",
 }
 PROVIDER_DIAGNOSTIC_COMMANDS = {
@@ -43,6 +54,20 @@ PROVIDER_DIAGNOSTIC_COMMANDS = {
     "403 Forbidden": 'paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "openai:gpt-4o-mini" --config-path "$CONFIG_PATH" --test-connections',
     "429 Too Many Requests": 'paperbrain summarize --config-path "$CONFIG_PATH" && paperbrain stats --config-path "$CONFIG_PATH"',
     "model not found": 'paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "gemini:gemini-1.5-flash" --config-path "$CONFIG_PATH" --test-connections',
+}
+PROVIDER_SPECIFIC_GUIDANCE = {
+    "## OpenAI": [
+        "OPENAI_API_KEY",
+        'paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "openai:gpt-4o-mini" --config-path "$CONFIG_PATH" --test-connections',
+    ],
+    "## Gemini": [
+        "GEMINI_API_KEY",
+        'paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "gemini:gemini-1.5-flash" --config-path "$CONFIG_PATH" --test-connections',
+    ],
+    "## Ollama": [
+        "OLLAMA_HOST",
+        'paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "ollama:llama3.1" --config-path "$CONFIG_PATH" --test-connections',
+    ],
 }
 CANONICAL_WORKFLOW_COMMANDS = [
     'paperbrain ingest /abs/path/to/pdfs --recursive --config-path "$CONFIG_PATH"',
@@ -117,6 +142,8 @@ def test_skill_completion_gate_requires_reporting_fields() -> None:
     completion_gate = _section_block(content, "## Completion gate")
     for field in REQUIRED_COMPLETION_FIELDS:
         assert field in completion_gate
+    for field in REQUIRED_FAILURE_DETAIL_FIELDS:
+        assert field in completion_gate
 
 
 def test_reference_documents_include_required_content() -> None:
@@ -133,6 +160,16 @@ def test_provider_troubleshooting_includes_diagnostic_commands_per_category() ->
     for category, command in PROVIDER_DIAGNOSTIC_COMMANDS.items():
         assert category in content
         assert command in content
+
+
+def test_provider_troubleshooting_has_provider_specific_diagnostics_and_actions() -> None:
+    content = (SKILL_DIR / "references" / "provider-troubleshooting.md").read_text(
+        encoding="utf-8"
+    )
+    for section, expected_snippets in PROVIDER_SPECIFIC_GUIDANCE.items():
+        block = _section_block(content, section)
+        for snippet in expected_snippets:
+            assert snippet in block
 
 
 def test_commands_reference_includes_canonical_patterns_with_config_path() -> None:

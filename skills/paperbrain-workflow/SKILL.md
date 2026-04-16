@@ -49,5 +49,6 @@ Do not mark the workflow complete until all fields are reported:
 - `counts`: key totals from run output (for example, ingested papers, summarized cards, exported files).
 - `skipped_categories`: categories skipped during the run and why, or `none`.
 - `failure_categories`: any failure buckets encountered (auth, quota, model, export, etc.) and current status, or `none`.
+- `failure_details`: for each item in `failure_categories`, include `symptom`, `likely_cause`, and `diagnostic_command` (plus current remediation status).
 - `validation_findings`: duplicate/export/provider checks performed.
 - `next_actions`: explicit next actions to complete remediation or `none`.

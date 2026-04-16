@@ -13,7 +13,7 @@ def test_save_and_load_config_round_trip(tmp_path: Path) -> None:
     store.save(database_url="postgresql://localhost:5432/paperbrain")
     loaded = store.load()
     assert loaded.database_url == "postgresql://localhost:5432/paperbrain"
-    assert loaded.summary_model == "gpt-4.1-mini"
+    assert loaded.summary_model == "openai:gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
 
 
@@ -24,7 +24,7 @@ def test_config_stores_openai_and_gemini_fields(tmp_path: Path) -> None:
         database_url="postgresql://localhost:5432/paperbrain",
         openai_api_key="sk-test",
         gemini_api_key="gm-test",
-        summary_model="gpt-4.1-mini",
+        summary_model="openai:gpt-4.1-mini",
         embedding_model="text-embedding-3-small",
     )
 
@@ -33,7 +33,7 @@ def test_config_stores_openai_and_gemini_fields(tmp_path: Path) -> None:
     assert loaded.database_url == "postgresql://localhost:5432/paperbrain"
     assert loaded.openai_api_key == "sk-test"
     assert loaded.gemini_api_key == "gm-test"
-    assert loaded.summary_model == "gpt-4.1-mini"
+    assert loaded.summary_model == "openai:gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
 
 
@@ -102,7 +102,7 @@ def test_load_legacy_config_uses_model_defaults(tmp_path: Path) -> None:
     assert loaded.gemini_api_key == ""
     assert loaded.ollama_api_key == ""
     assert loaded.ollama_base_url == "https://ollama.com"
-    assert loaded.summary_model == "gpt-4.1-mini"
+    assert loaded.summary_model == "openai:gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
 
 

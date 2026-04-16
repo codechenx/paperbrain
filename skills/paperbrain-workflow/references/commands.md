@@ -11,8 +11,10 @@ python3 -m pytest -q
 Use an explicit config path for every command:
 
 ```bash
-CONFIG_PATH="/abs/path/to/config.toml"
+CONFIG_PATH="${HOME}/.config/paperbrain/paperbrain.conf"
 ```
+
+Default config file: `~/.config/paperbrain/paperbrain.conf`
 
 Confirm config and database connectivity are available for the active profile before ingest/summarize/export:
 

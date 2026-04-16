@@ -1,3 +1,5 @@
+import json
+import re
 from pathlib import Path
 
 
@@ -43,6 +45,26 @@ REQUIRED_FAILURE_DETAIL_FIELDS = [
     "`likely_cause`",
     "`diagnostic_command`",
 ]
+RUN_SUMMARY_TEMPLATE_HEADER = "### Scenario run-summary template"
+RUN_SUMMARY_REQUIRED_KEYS = [
+    "provider_model",
+    "baseline_checks",
+    "ingest_result",
+    "summarize_result",
+    "export_result",
+    "counts",
+    "skipped_categories",
+    "failure_categories",
+    "failure_details",
+    "validation_findings",
+    "next_actions",
+]
+RUN_SUMMARY_NESTED_REQUIRED_KEYS = {
+    "ingest_result": ["scope", "command", "outcome"],
+    "summarize_result": ["command", "outcome", "evidence"],
+    "export_result": ["output_path", "file_layout_evidence"],
+}
+DEFAULT_CONFIG_PATH = "~/.config/paperbrain/paperbrain.conf"
 REFERENCE_EXPECTATIONS = {
     "commands.md": 'paperbrain summarize --config-path "$CONFIG_PATH"',
     "provider-troubleshooting.md": "## OpenAI",
@@ -65,7 +87,9 @@ PROVIDER_SPECIFIC_GUIDANCE = {
         'paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "gemini:gemini-1.5-flash" --config-path "$CONFIG_PATH" --test-connections',
     ],
     "## Ollama": [
-        "OLLAMA_HOST",
+        "ollama_api_key",
+        "ollama_base_url",
+        "Optional local mode",
         'paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "ollama:llama3.1" --config-path "$CONFIG_PATH" --test-connections',
     ],
 }
@@ -95,6 +119,14 @@ def _section_block(content: str, header: str) -> str:
     if next_header == -1:
         return tail
     return tail[:next_header]
+
+
+def _json_block_after_header(content: str, header: str) -> dict:
+    start = content.index(header)
+    tail = content[start + len(header) :]
+    match = re.search(r"```json\n(.*?)\n```", tail, re.DOTALL)
+    assert match is not None, f"Missing JSON block after header: {header}"
+    return json.loads(match.group(1))
 
 
 def test_skill_package_files_exist() -> None:
@@ -146,6 +178,22 @@ def test_skill_completion_gate_requires_reporting_fields() -> None:
         assert field in completion_gate
 
 
+def test_skill_run_summary_scenario_template_has_required_structure() -> None:
+    content = SKILL_FILE.read_text(encoding="utf-8")
+    template = _json_block_after_header(content, RUN_SUMMARY_TEMPLATE_HEADER)
+    for key in RUN_SUMMARY_REQUIRED_KEYS:
+        assert key in template
+    for key, nested_keys in RUN_SUMMARY_NESTED_REQUIRED_KEYS.items():
+        assert isinstance(template[key], dict)
+        for nested_key in nested_keys:
+            assert nested_key in template[key]
+    assert isinstance(template["counts"], dict)
+    assert isinstance(template["failure_details"], list)
+    assert template["failure_details"], "failure_details should include at least one scenario item"
+    for key in ("symptom", "likely_cause", "diagnostic_command"):
+        assert key in template["failure_details"][0]
+
+
 def test_reference_documents_include_required_content() -> None:
     references_dir = SKILL_DIR / "references"
     for file_name, expected_text in REFERENCE_EXPECTATIONS.items():
@@ -172,6 +220,15 @@ def test_provider_troubleshooting_has_provider_specific_diagnostics_and_actions(
             assert snippet in block
 
 
+def test_provider_troubleshooting_ollama_env_var_is_only_optional_local_mode() -> None:
+    content = (SKILL_DIR / "references" / "provider-troubleshooting.md").read_text(
+        encoding="utf-8"
+    )
+    ollama_block = _section_block(content, "## Ollama")
+    if "OLLAMA_HOST" in ollama_block:
+        assert "optional local mode" in ollama_block.lower()
+
+
 def test_commands_reference_includes_canonical_patterns_with_config_path() -> None:
     content = (SKILL_DIR / "references" / "commands.md").read_text(encoding="utf-8")
     for command in CANONICAL_WORKFLOW_COMMANDS:
@@ -182,6 +239,12 @@ def test_commands_reference_includes_post_step_verification_commands() -> None:
     content = (SKILL_DIR / "references" / "commands.md").read_text(encoding="utf-8")
     for command in POST_STEP_VERIFICATION_COMMANDS:
         assert command in content
+
+
+def test_commands_reference_uses_default_config_path() -> None:
+    content = (SKILL_DIR / "references" / "commands.md").read_text(encoding="utf-8")
+    assert DEFAULT_CONFIG_PATH in content
+    assert "config.toml" not in content
 
 
 def test_dedupe_reference_includes_source_path_mismatch_flow() -> None:

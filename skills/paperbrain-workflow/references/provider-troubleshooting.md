@@ -31,12 +31,13 @@ Use this table to map symptoms to next actions quickly.
 ## Ollama
 
 - Diagnostics:
-  - `python3 -c 'import os; print("OLLAMA_HOST set" if os.getenv("OLLAMA_HOST") else "OLLAMA_HOST missing (default http://127.0.0.1:11434)")'`
+  - `python3 -c 'import pathlib, tomllib; p = pathlib.Path.home() / ".config/paperbrain/paperbrain.conf"; cfg = tomllib.loads(p.read_text(encoding="utf-8")).get("paperbrain", {}) if p.exists() else {}; print("ollama_api_key + ollama_base_url set" if str(cfg.get("ollama_api_key", "")).strip() and str(cfg.get("ollama_base_url", "")).strip() else "missing ollama_api_key or ollama_base_url")'`
   - `ollama list`
   - `paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "ollama:llama3.1" --config-path "$CONFIG_PATH" --test-connections`
 - Actions:
-  - Start/restart the Ollama daemon and ensure `OLLAMA_HOST` points to the correct host.
+  - Set `ollama_api_key` and `ollama_base_url` in `paperbrain.conf`, then rerun summarize.
   - Pull the configured `ollama:` model (`ollama pull llama3.1`) before retrying summarize.
+  - Optional local mode: if you intentionally run a local Ollama daemon, set `OLLAMA_HOST` to the daemon endpoint and re-run diagnostics.
 
 ## Quick isolation steps
 

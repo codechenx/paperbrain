@@ -192,7 +192,7 @@ paperbrain setup \
 ```
 
 Default config path is:
-- `config/paperbrain.conf`
+- `~/.config/paperbrain/paperbrain.conf`
 
 Config shape:
 

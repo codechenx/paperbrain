@@ -496,6 +496,18 @@ def test_run_setup_rejects_embedding_models_incompatible_with_schema(tmp_path: P
         )
 
 
+def test_run_setup_rejects_unprefixed_summary_model_even_when_not_testing_connections(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="Summary model must be prefixed with one of: openai:, gemini:, ollama:"):
+        run_setup(
+            database_url="postgresql://localhost:5432/paperbrain",
+            openai_api_key="sk-test",
+            summary_model="gpt-4.1-mini",
+            embedding_model="text-embedding-3-small",
+            config_path=tmp_path / "paperbrain.conf",
+            test_connections=False,
+        )
+
+
 def test_build_runtime_rejects_unprefixed_summary_model(monkeypatch: Any, tmp_path: Path) -> None:
     config = AppConfig(
         database_url="postgresql://localhost:5432/paperbrain",

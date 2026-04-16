@@ -85,13 +85,13 @@ def run_setup(
     if not embedding_model.strip():
         raise ValueError("Embedding model must be non-empty")
     validate_embedding_model_for_schema(embedding_model)
+    # parse provider:model explicitly (always validate prefix)
+    parsed = parse_summary_model(summary_model)
     if test_connections:
         try:
             _validate_database_connection(database_url)
         except Exception as exc:
             raise RuntimeError(f"Setup failed during database validation: {exc}") from exc
-        # parse provider:model explicitly
-        parsed = parse_summary_model(summary_model)
         summary_uses_gemini = parsed.provider == "gemini"
         summary_uses_ollama = parsed.provider == "ollama"
         try:

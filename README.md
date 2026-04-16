@@ -159,7 +159,7 @@ python3 -m pip install -e .
 paperbrain setup \
   --url postgresql://<user>:<pass>@localhost:5432/paperbrain \
   --openai-api-key $OPENAI_API_KEY \
-  --summary-model gpt-4.1-mini
+  --summary-model openai:gpt-4.1-mini
 ```
 
 For Gemini summary models, pass the Gemini key and a Gemini model name:
@@ -169,7 +169,7 @@ paperbrain setup \
   --url postgresql://<user>:<pass>@localhost:5432/paperbrain \
   --openai-api-key $OPENAI_API_KEY \
   --gemini-api-key $GEMINI_API_KEY \
-  --summary-model gemini-2.5-flash
+  --summary-model gemini:gemini-2.5-flash
 ```
 
 For Ollama summary models, pass the Ollama key and an `ollama:*` summary model.
@@ -203,15 +203,17 @@ openai_api_key = "sk-..."
 gemini_api_key = "AIza..."
 ollama_api_key = "ol-..."
 ollama_base_url = "https://ollama.com"
-summary_model = "gpt-4.1-mini"
+summary_model = "openai:gpt-4.1-mini"
 embedding_model = "text-embedding-3-small"
 ```
 
-Summary provider is selected from the summary model prefix:
+Summary provider is selected from explicit summary model prefixes:
 
-- `gemini-*` models use Gemini for summaries
+- `openai:*` models use OpenAI for summaries
+- `gemini:*` models use Gemini for summaries
 - `ollama:*` models use Ollama for summaries
-- all other summary models use OpenAI for summaries
+
+Legacy unprefixed selectors (for example `gpt-4.1-mini` or `gemini-2.5-flash`) are rejected.
 
 ### Initialize schema
 
@@ -249,10 +251,10 @@ paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --for
 
 ```bash
 # 1) Configure
-paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --openai-api-key $OPENAI_API_KEY --summary-model gpt-4.1-mini
+paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --openai-api-key $OPENAI_API_KEY --summary-model openai:gpt-4.1-mini
 
 # 1b) Or use Gemini for summaries
-paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --openai-api-key $OPENAI_API_KEY --gemini-api-key $GEMINI_API_KEY --summary-model gemini-2.5-flash
+paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --openai-api-key $OPENAI_API_KEY --gemini-api-key $GEMINI_API_KEY --summary-model gemini:gemini-2.5-flash
 
 # 1c) Or use Ollama for summaries (optional: add --ollama-base-url)
 paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --openai-api-key $OPENAI_API_KEY --ollama-api-key $OLLAMA_API_KEY --summary-model ollama:llama3.2

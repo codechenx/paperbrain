@@ -20,7 +20,6 @@ from paperbrain.adapters.ollama_client import OllamaCloudClient
 from paperbrain.adapters.openai_client import OpenAIClient
 from paperbrain.config import AppConfig, ConfigStore
 from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_SUMMARY_MODEL
-from paperbrain.summary_provider import parse_summary_model
 from paperbrain.summary_provider import SummaryProvider
 from paperbrain.db import connect
 from paperbrain.repositories.postgres import PostgresRepo
@@ -43,24 +42,6 @@ class RuntimeAdapters:
     parser: DoclingParser
     embeddings: OpenAIEmbeddingAdapter
     llm: LLMAdapter
-
-
-def _is_gemini_summary_model(summary_model: str) -> bool:
-    return summary_model.strip().lower().startswith("gemini-")
-
-
-def _is_ollama_summary_model(summary_model: str) -> bool:
-    return summary_model.strip().lower().startswith("ollama:")
-
-
-def _strip_ollama_model_prefix(summary_model: str) -> str:
-    stripped = summary_model.strip()
-    if not _is_ollama_summary_model(stripped):
-        raise ValueError("Summary model must start with ollama:")
-    model = stripped[len("ollama:") :].strip()
-    if not model:
-        raise ValueError("Ollama summary model must include a model name after 'ollama:'")
-    return model
 
 
 def build_runtime(config_path: Path) -> RuntimeAdapters:

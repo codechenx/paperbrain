@@ -22,6 +22,35 @@ If two records look duplicated but `source_path` values differ, run this check f
 
 If duplicate records are found, clean up the bad subset and rerun only the required stage.
 
+## Scenario: duplicate-export/source_path mismatch flow contract
+
+1. Capture the suspect duplicate pair and compare filename + slug first.
+2. Classify path style using one absolute path and one relative path example.
+3. Normalize both paths against the same base directory and compare resolved outputs.
+4. If normalized paths match, treat as path-format mismatch and dedupe the extra record.
+5. Rerun summarize, rerun export, and verify layout (`index.md`, `papers/`, `people/`, `topics/`).
+
+### Scenario duplicate-export report template
+
+```json
+{
+  "scenario": "duplicate-export-source-path-mismatch",
+  "record_pair": [
+    "paper:foo-123",
+    "paper:foo-456"
+  ],
+  "absolute_source_path": "/home/user/library/papers/foo.pdf",
+  "relative_source_path": "papers/foo.pdf",
+  "normalized_match": true,
+  "dedupe_action": "removed duplicate record paper:foo-456 and kept canonical source",
+  "rerun_steps": [
+    "paperbrain summarize --config-path \"$CONFIG_PATH\"",
+    "paperbrain export --output-dir /abs/path/to/export --config-path \"$CONFIG_PATH\""
+  ],
+  "verification": "index.md + papers/ + people/ + topics/ layout verified after rerun"
+}
+```
+
 ## Export diagnostics
 
 Validate export output after summarize:

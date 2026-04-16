@@ -37,6 +37,15 @@ If duplicate exports are suspected, read `references/dedupe-and-export-checks.md
 4. Re-check duplicates and export integrity before moving forward.
 5. Repeat until all stages are validated.
 
+### Scenario: normal run flow contract
+
+1. Run baseline checks from `references/commands.md`.
+2. Set `CONFIG_PATH` and verify connectivity with `paperbrain stats --config-path "$CONFIG_PATH"`.
+3. Run ingest and capture `scope`, `command`, and `outcome`.
+4. Run summarize and capture command outcome plus card/update evidence.
+5. Run export and verify `index.md` plus `papers/`, `people/`, and `topics/` layout.
+6. Emit completion report using the `Scenario run-summary template` fields.
+
 ## Completion gate
 
 Do not mark the workflow complete until all fields are reported:

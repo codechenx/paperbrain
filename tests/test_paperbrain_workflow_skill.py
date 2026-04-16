@@ -64,6 +64,53 @@ RUN_SUMMARY_NESTED_REQUIRED_KEYS = {
     "summarize_result": ["command", "outcome", "evidence"],
     "export_result": ["output_path", "file_layout_evidence"],
 }
+NORMAL_RUN_FLOW_CONTRACT_HEADER = "### Scenario: normal run flow contract"
+NORMAL_RUN_FLOW_ORDERED_STEPS = [
+    "Run baseline checks from `references/commands.md`.",
+    "Set `CONFIG_PATH` and verify connectivity with `paperbrain stats --config-path \"$CONFIG_PATH\"`.",
+    "Run ingest and capture `scope`, `command`, and `outcome`.",
+    "Run summarize and capture command outcome plus card/update evidence.",
+    "Run export and verify `index.md` plus `papers/`, `people/`, and `topics/` layout.",
+    "Emit completion report using the `Scenario run-summary template` fields.",
+]
+PROVIDER_AUTH_FLOW_HEADER = "## Scenario: provider-auth failure flow contract"
+PROVIDER_AUTH_FLOW_ORDERED_STEPS = [
+    "Classify the auth symptom (`Invalid username or token`, `401 Unauthorized`, or `403 Forbidden`).",
+    "Run the mapped diagnostic command and ensure it uses `--config-path \"$CONFIG_PATH\"` where applicable.",
+    "Apply provider-specific remediation (credential rotation, permission/model fix, or config correction).",
+    "Rerun `paperbrain summarize --config-path \"$CONFIG_PATH\"` minimally, then rerun export only if summarize succeeds.",
+    "Report failure details with `symptom`, `likely_cause`, and `diagnostic_command` plus remediation status.",
+]
+PROVIDER_AUTH_TEMPLATE_HEADER = "### Scenario provider-auth report template"
+PROVIDER_AUTH_TEMPLATE_REQUIRED_KEYS = [
+    "scenario",
+    "provider_model",
+    "symptom",
+    "likely_cause",
+    "diagnostic_command",
+    "remediation",
+    "rerun_command",
+    "next_action",
+]
+DUPLICATE_EXPORT_FLOW_HEADER = "## Scenario: duplicate-export/source_path mismatch flow contract"
+DUPLICATE_EXPORT_FLOW_ORDERED_STEPS = [
+    "Capture the suspect duplicate pair and compare filename + slug first.",
+    "Classify path style using one absolute path and one relative path example.",
+    "Normalize both paths against the same base directory and compare resolved outputs.",
+    "If normalized paths match, treat as path-format mismatch and dedupe the extra record.",
+    "Rerun summarize, rerun export, and verify layout (`index.md`, `papers/`, `people/`, `topics/`).",
+]
+DUPLICATE_EXPORT_TEMPLATE_HEADER = "### Scenario duplicate-export report template"
+DUPLICATE_EXPORT_TEMPLATE_REQUIRED_KEYS = [
+    "scenario",
+    "record_pair",
+    "absolute_source_path",
+    "relative_source_path",
+    "normalized_match",
+    "dedupe_action",
+    "rerun_steps",
+    "verification",
+]
 DEFAULT_CONFIG_PATH = "~/.config/paperbrain/paperbrain.conf"
 REFERENCE_EXPECTATIONS = {
     "commands.md": 'paperbrain summarize --config-path "$CONFIG_PATH"',
@@ -93,6 +140,10 @@ PROVIDER_SPECIFIC_GUIDANCE = {
         'paperbrain setup --url "postgresql://localhost:5432/paperbrain" --summary-model "ollama:llama3.1" --config-path "$CONFIG_PATH" --test-connections',
     ],
 }
+OLLAMA_CONFIG_PATH_SNIPPETS = [
+    'CONFIG_PATH="${CONFIG_PATH:-${HOME}/.config/paperbrain/paperbrain.conf}"',
+    'os.environ["CONFIG_PATH"]',
+]
 CANONICAL_WORKFLOW_COMMANDS = [
     'paperbrain ingest /abs/path/to/pdfs --recursive --config-path "$CONFIG_PATH"',
     'paperbrain summarize --config-path "$CONFIG_PATH"',
@@ -127,6 +178,11 @@ def _json_block_after_header(content: str, header: str) -> dict:
     match = re.search(r"```json\n(.*?)\n```", tail, re.DOTALL)
     assert match is not None, f"Missing JSON block after header: {header}"
     return json.loads(match.group(1))
+
+
+def _assert_markers_in_order(content: str, markers: list[str]) -> None:
+    positions = [content.index(marker) for marker in markers]
+    assert positions == sorted(positions)
 
 
 def test_skill_package_files_exist() -> None:
@@ -194,6 +250,12 @@ def test_skill_run_summary_scenario_template_has_required_structure() -> None:
         assert key in template["failure_details"][0]
 
 
+def test_skill_normal_run_flow_contract_has_ordered_steps() -> None:
+    content = SKILL_FILE.read_text(encoding="utf-8")
+    block = _section_block(content, NORMAL_RUN_FLOW_CONTRACT_HEADER)
+    _assert_markers_in_order(block, NORMAL_RUN_FLOW_ORDERED_STEPS)
+
+
 def test_reference_documents_include_required_content() -> None:
     references_dir = SKILL_DIR / "references"
     for file_name, expected_text in REFERENCE_EXPECTATIONS.items():
@@ -208,6 +270,26 @@ def test_provider_troubleshooting_includes_diagnostic_commands_per_category() ->
     for category, command in PROVIDER_DIAGNOSTIC_COMMANDS.items():
         assert category in content
         assert command in content
+
+
+def test_provider_auth_failure_flow_contract_has_ordered_steps() -> None:
+    content = (SKILL_DIR / "references" / "provider-troubleshooting.md").read_text(
+        encoding="utf-8"
+    )
+    block = _section_block(content, PROVIDER_AUTH_FLOW_HEADER)
+    _assert_markers_in_order(block, PROVIDER_AUTH_FLOW_ORDERED_STEPS)
+
+
+def test_provider_auth_failure_report_template_has_required_fields() -> None:
+    content = (SKILL_DIR / "references" / "provider-troubleshooting.md").read_text(
+        encoding="utf-8"
+    )
+    template = _json_block_after_header(content, PROVIDER_AUTH_TEMPLATE_HEADER)
+    for key in PROVIDER_AUTH_TEMPLATE_REQUIRED_KEYS:
+        assert key in template
+    assert template["scenario"] == "provider-auth-failure"
+    assert template["rerun_command"] == 'paperbrain summarize --config-path "$CONFIG_PATH"'
+    assert "$CONFIG_PATH" in template["diagnostic_command"]
 
 
 def test_provider_troubleshooting_has_provider_specific_diagnostics_and_actions() -> None:
@@ -227,6 +309,16 @@ def test_provider_troubleshooting_ollama_env_var_is_only_optional_local_mode() -
     ollama_block = _section_block(content, "## Ollama")
     if "OLLAMA_HOST" in ollama_block:
         assert "optional local mode" in ollama_block.lower()
+
+
+def test_provider_troubleshooting_ollama_diagnostic_uses_config_path_variable() -> None:
+    content = (SKILL_DIR / "references" / "provider-troubleshooting.md").read_text(
+        encoding="utf-8"
+    )
+    ollama_block = _section_block(content, "## Ollama")
+    for snippet in OLLAMA_CONFIG_PATH_SNIPPETS:
+        assert snippet in ollama_block
+    assert 'Path.home() / ".config/paperbrain/paperbrain.conf"' not in ollama_block
 
 
 def test_commands_reference_includes_canonical_patterns_with_config_path() -> None:
@@ -253,3 +345,27 @@ def test_dedupe_reference_includes_source_path_mismatch_flow() -> None:
     )
     positions = [content.index(marker) for marker in DEDUPE_MISMATCH_FLOW_MARKERS]
     assert positions == sorted(positions)
+
+
+def test_duplicate_export_flow_contract_has_ordered_steps() -> None:
+    content = (SKILL_DIR / "references" / "dedupe-and-export-checks.md").read_text(
+        encoding="utf-8"
+    )
+    block = _section_block(content, DUPLICATE_EXPORT_FLOW_HEADER)
+    _assert_markers_in_order(block, DUPLICATE_EXPORT_FLOW_ORDERED_STEPS)
+
+
+def test_duplicate_export_report_template_has_required_fields() -> None:
+    content = (SKILL_DIR / "references" / "dedupe-and-export-checks.md").read_text(
+        encoding="utf-8"
+    )
+    template = _json_block_after_header(content, DUPLICATE_EXPORT_TEMPLATE_HEADER)
+    for key in DUPLICATE_EXPORT_TEMPLATE_REQUIRED_KEYS:
+        assert key in template
+    assert template["scenario"] == "duplicate-export-source-path-mismatch"
+    assert isinstance(template["record_pair"], list)
+    assert isinstance(template["rerun_steps"], list)
+    assert template["rerun_steps"] == [
+        'paperbrain summarize --config-path "$CONFIG_PATH"',
+        'paperbrain export --output-dir /abs/path/to/export --config-path "$CONFIG_PATH"',
+    ]

@@ -16,11 +16,14 @@ In scope:
    - `person`: full rebuild for all person cards
    - `topic`: full rebuild for all topic cards
 5. Preserve relation integrity when recomputing related person/topic subsets in incremental mode.
+6. Update user-facing docs and workflow skill guidance for the new summarize contract:
+   - `README.md`
+   - `skills/paperbrain-workflow/` summarize guidance
 
 Out of scope:
 1. Changes to ingest dedupe semantics.
 2. Changes to provider selection rules (`openai:`, `gemini:`, `ollama:`).
-3. UI/web workflow changes.
+3. UI/web feature changes.
 
 ## Approved approach
 
@@ -66,6 +69,9 @@ Behavior:
    - Update summarize service tests for scope contract and affected-only behavior.
    - Update CLI tests for new option and `--force-all` removal.
    - Add repository tests for new graph/helper query behavior.
+5. **Documentation**
+   - Update `README.md` summarize examples/options.
+   - Update `skills/paperbrain-workflow/SKILL.md` and references where summarize flags/semantics are documented.
 
 ## Incremental data flow (default run)
 
@@ -116,3 +122,4 @@ Behavior:
 3. Default summarize run updates only cards related to newly ingested papers.
 4. Scoped full rebuilds update only the intended scope(s).
 5. Tests verify incremental relation integrity and scope-specific rebuild behavior.
+6. `README.md` and `skills/paperbrain-workflow/` documentation reflect the new `--card-scope` contract and removal of `--force-all`.

@@ -1187,7 +1187,7 @@ def test_summarize_generates_person_topic_when_corresponding_authors_inferred() 
     assert result.topic_cards == 1
 
 
-def test_summarize_focus_area_from_generated_topics() -> None:
+def test_summarize_focus_area_and_topic_links_from_generated_topics() -> None:
     class TopicLinkRepo(FakeRepo):
         def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
             self.force_all_seen = force_all
@@ -1441,7 +1441,7 @@ def test_summarize_does_not_delete_existing_paper_links_when_cards_omit_paper_re
     assert result.topic_cards == 1
 
 
-def test_summarize_focus_area_from_generated_topics() -> None:
+def test_summarize_populates_empty_focus_area_from_generated_topics() -> None:
     class FocusAreaLLM(FakeLLM):
         def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
             return [

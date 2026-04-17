@@ -423,3 +423,109 @@ def test_upsert_topic_cards_replace_existing_prunes_missing_cards() -> None:
     assert "DELETE FROM topic_cards WHERE slug <> ALL(%s);" in executed_sql
     assert "DELETE FROM paper_topic_links WHERE topic_slug <> ALL(%s);" in executed_sql
     assert "DELETE FROM person_topic_links WHERE topic_slug <> ALL(%s);" in executed_sql
+
+
+def test_list_person_slugs_linked_to_paper_slugs() -> None:
+    connection = FakeConnection(rows=(("people/alice",), ("people/bob",)))
+    repo = PostgresRepo(connection)
+
+    slugs = repo.list_person_slugs_linked_to_paper_slugs(["papers/a", "papers/b"])
+
+    assert slugs == ["people/alice", "people/bob"]
+    sql, params = connection.executed[0]
+    assert "SELECT DISTINCT person_slug" in sql
+    assert "FROM paper_person_links" in sql
+    assert "paper_slug = ANY(%s)" in sql
+    assert "ORDER BY person_slug;" in sql
+    assert params == (["papers/a", "papers/b"],)
+
+
+def test_list_topic_slugs_linked_to_person_slugs() -> None:
+    connection = FakeConnection(rows=(("topics/genomics",), ("topics/immunology",)))
+    repo = PostgresRepo(connection)
+
+    slugs = repo.list_topic_slugs_linked_to_person_slugs(["people/alice", "people/bob"])
+
+    assert slugs == ["topics/genomics", "topics/immunology"]
+    sql, params = connection.executed[0]
+    assert "SELECT DISTINCT topic_slug" in sql
+    assert "FROM person_topic_links" in sql
+    assert "person_slug = ANY(%s)" in sql
+    assert "ORDER BY topic_slug;" in sql
+    assert params == (["people/alice", "people/bob"],)
+
+
+def test_list_paper_slugs_linked_to_person_slugs() -> None:
+    connection = FakeConnection(rows=(("papers/a",), ("papers/b",)))
+    repo = PostgresRepo(connection)
+
+    slugs = repo.list_paper_slugs_linked_to_person_slugs(["people/alice", "people/bob"])
+
+    assert slugs == ["papers/a", "papers/b"]
+    sql, params = connection.executed[0]
+    assert "SELECT DISTINCT paper_slug" in sql
+    assert "FROM paper_person_links" in sql
+    assert "person_slug = ANY(%s)" in sql
+    assert "ORDER BY paper_slug;" in sql
+    assert params == (["people/alice", "people/bob"],)
+
+
+def test_list_person_slugs_linked_to_topic_slugs() -> None:
+    connection = FakeConnection(rows=(("people/alice",), ("people/bob",)))
+    repo = PostgresRepo(connection)
+
+    slugs = repo.list_person_slugs_linked_to_topic_slugs(["topics/genomics", "topics/immunology"])
+
+    assert slugs == ["people/alice", "people/bob"]
+    sql, params = connection.executed[0]
+    assert "SELECT DISTINCT person_slug" in sql
+    assert "FROM person_topic_links" in sql
+    assert "topic_slug = ANY(%s)" in sql
+    assert "ORDER BY person_slug;" in sql
+    assert params == (["topics/genomics", "topics/immunology"],)
+
+
+def test_fetch_paper_cards_by_slugs_decodes_payloads() -> None:
+    connection = FakeConnection(
+        rows=(
+            ("papers/a", '{"summary":"Alpha"}'),
+            ("papers/b", {"summary": "Beta"}),
+        )
+    )
+    repo = PostgresRepo(connection)
+
+    cards = repo.fetch_paper_cards_by_slugs(["papers/a", "papers/b"])
+
+    assert cards == [
+        {"summary": "Alpha", "slug": "papers/a", "type": "paper"},
+        {"summary": "Beta", "slug": "papers/b", "type": "paper"},
+    ]
+    sql, params = connection.executed[0]
+    assert "SELECT slug, body" in sql
+    assert "FROM paper_cards" in sql
+    assert "slug = ANY(%s)" in sql
+    assert "ORDER BY slug;" in sql
+    assert params == (["papers/a", "papers/b"],)
+
+
+def test_fetch_person_cards_by_slugs_decodes_payloads() -> None:
+    connection = FakeConnection(
+        rows=(
+            ("people/alice", '{"name":"Alice"}'),
+            ("people/bob", {"name": "Bob"}),
+        )
+    )
+    repo = PostgresRepo(connection)
+
+    cards = repo.fetch_person_cards_by_slugs(["people/alice", "people/bob"])
+
+    assert cards == [
+        {"name": "Alice", "slug": "people/alice", "type": "person"},
+        {"name": "Bob", "slug": "people/bob", "type": "person"},
+    ]
+    sql, params = connection.executed[0]
+    assert "SELECT slug, body" in sql
+    assert "FROM person_cards" in sql
+    assert "slug = ANY(%s)" in sql
+    assert "ORDER BY slug;" in sql
+    assert params == (["people/alice", "people/bob"],)

@@ -238,6 +238,102 @@ class PostgresRepo:
             for paper_slug, keyword_rank, vector_rank in rows
         ]
 
+    def list_person_slugs_linked_to_paper_slugs(self, paper_slugs: list[str]) -> list[str]:
+        if not paper_slugs:
+            return []
+        rows = self.fetchall(
+            """
+            SELECT DISTINCT person_slug
+            FROM paper_person_links
+            WHERE paper_slug = ANY(%s)
+            ORDER BY person_slug;
+            """.strip(),
+            (paper_slugs,),
+        )
+        return [str(person_slug) for person_slug, in rows]
+
+    def list_topic_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+        if not person_slugs:
+            return []
+        rows = self.fetchall(
+            """
+            SELECT DISTINCT topic_slug
+            FROM person_topic_links
+            WHERE person_slug = ANY(%s)
+            ORDER BY topic_slug;
+            """.strip(),
+            (person_slugs,),
+        )
+        return [str(topic_slug) for topic_slug, in rows]
+
+    def list_paper_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+        if not person_slugs:
+            return []
+        rows = self.fetchall(
+            """
+            SELECT DISTINCT paper_slug
+            FROM paper_person_links
+            WHERE person_slug = ANY(%s)
+            ORDER BY paper_slug;
+            """.strip(),
+            (person_slugs,),
+        )
+        return [str(paper_slug) for paper_slug, in rows]
+
+    def list_person_slugs_linked_to_topic_slugs(self, topic_slugs: list[str]) -> list[str]:
+        if not topic_slugs:
+            return []
+        rows = self.fetchall(
+            """
+            SELECT DISTINCT person_slug
+            FROM person_topic_links
+            WHERE topic_slug = ANY(%s)
+            ORDER BY person_slug;
+            """.strip(),
+            (topic_slugs,),
+        )
+        return [str(person_slug) for person_slug, in rows]
+
+    def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
+        if not paper_slugs:
+            return []
+        rows = self.fetchall(
+            """
+            SELECT slug, body
+            FROM paper_cards
+            WHERE slug = ANY(%s)
+            ORDER BY slug;
+            """.strip(),
+            (paper_slugs,),
+        )
+        output: list[dict] = []
+        for slug, body in rows:
+            card = _decode_card_payload(body)
+            card.setdefault("slug", str(slug))
+            card.setdefault("type", "paper")
+            output.append(card)
+        return output
+
+    def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
+        if not person_slugs:
+            return []
+        rows = self.fetchall(
+            """
+            SELECT slug, body
+            FROM person_cards
+            WHERE slug = ANY(%s)
+            ORDER BY slug;
+            """.strip(),
+            (person_slugs,),
+        )
+        output: list[dict] = []
+        for slug, body in rows:
+            card = _decode_card_payload(body)
+            card.setdefault("slug", str(slug))
+            card.setdefault("type", "person")
+            output.append(card)
+        return output
+
     def fetch_related_cards(self, paper_slugs: list[str]) -> dict[str, list[dict]]:
         if not paper_slugs:
             return {}

@@ -52,7 +52,7 @@ PaperBrain focuses on a **question-centric workflow**:
 │  - corresponding_authors                                                    │
 └───────────────────────────────────────────────────────────────────────────┘
                      │
-                     │ paperbrain summarize [--force-all]
+                     │ paperbrain summarize [--card-scope all|paper|person|topic]
                      ▼
       ┌─────────────────────────────────────────────────────────────┐
       │ Provider-selected summarization (OpenAI/Gemini/Ollama) +    │
@@ -238,7 +238,7 @@ paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --for
 | `paperbrain ingest PATH` | Parse PDFs and store chunks/embeddings | `--recursive`, `--force-all`, `--config-path` |
 | `paperbrain browse KEYWORD` | Keyword browse card bodies | `--type [paper\|person\|topic\|all]`, `--config-path` |
 | `paperbrain search QUERY` | Hybrid keyword + vector paper search | `--top-k`, `--include-cards`, `--config-path` |
-| `paperbrain summarize` | Build/update paper/person/topic cards | `--force-all`, `--config-path` |
+| `paperbrain summarize` | Build/update paper/person/topic cards | `--card-scope [all\|paper\|person\|topic]`, `--config-path` |
 | `paperbrain lint` | Run quality checks/fixes | `--config-path` |
 | `paperbrain stats` | Show corpus counts | `--config-path` |
 | `paperbrain export` | Export markdown vault files | `--output-dir`, `--config-path` |
@@ -265,14 +265,25 @@ paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --for
 # 3) Ingest PDFs
 paperbrain ingest /path/to/pdfs --recursive --force-all
 
-# 4) Build cards
-paperbrain summarize --force-all
+# 4) Build cards (incremental default)
+paperbrain summarize
 
 # 5) Search
 paperbrain search "gut microbiome and lung cancer" --top-k 10 --include-cards
 
 # 6) Export markdown vault
 paperbrain export --output-dir /path/to/exported_cards
+```
+
+Default summarize behavior is incremental related-card updates.
+
+Use explicit summarize rebuild scopes only when needed:
+
+```bash
+paperbrain summarize --card-scope all
+paperbrain summarize --card-scope paper
+paperbrain summarize --card-scope person
+paperbrain summarize --card-scope topic
 ```
 
 ### Expected export layout

@@ -26,7 +26,8 @@ If duplicate exports are suspected, read `references/dedupe-and-export-checks.md
    - `ollama:<model>`
    - Fail-fast rule: no silent fallbacks, no provider auto-switching, and provider/model errors must be surfaced and fixed before continuing.
 3. Run ingest for target files/directories.
-4. Run summarize and confirm card generation signals.
+4. Run summarize and confirm card generation signals. Default summarize behavior is incremental related-card updates.
+   - Explicit rebuild scopes: `--card-scope all`, `--card-scope paper`, `--card-scope person`, `--card-scope topic`.
 5. Run export and inspect output structure.
 6. If issues appear, follow the matching reference guide and re-run minimally.
 7. Post-run validation: reconcile run counts, report skipped categories, and run dedupe/export sanity checks.

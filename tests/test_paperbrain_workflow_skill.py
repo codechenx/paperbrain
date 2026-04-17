@@ -5,8 +5,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+README_FILE = ROOT / "README.md"
 SKILL_DIR = ROOT / "skills" / "paperbrain-workflow"
 SKILL_FILE = SKILL_DIR / "SKILL.md"
+COMMANDS_FILE = SKILL_DIR / "references" / "commands.md"
 EXPECTED_FRONTMATTER = {
     "name": "paperbrain-workflow",
     "description": "Run and troubleshoot PaperBrain ingest/summarize/export workflows with validation and duplicate checks.",
@@ -153,6 +155,13 @@ CANONICAL_WORKFLOW_COMMANDS = [
     'paperbrain summarize --config-path "$CONFIG_PATH"',
     'paperbrain export --output-dir /abs/path/to/export --config-path "$CONFIG_PATH"',
 ]
+SUMMARIZE_CARD_SCOPE_FLAGS = [
+    "--card-scope all",
+    "--card-scope paper",
+    "--card-scope person",
+    "--card-scope topic",
+]
+SUMMARIZE_INCREMENTAL_MARKER = "Default summarize behavior is incremental related-card updates."
 POST_STEP_VERIFICATION_COMMANDS = [
     'paperbrain stats --config-path "$CONFIG_PATH"',
     'paperbrain search "<title keyword>" --top-k 3 --include-cards --config-path "$CONFIG_PATH"',
@@ -451,21 +460,54 @@ def test_provider_troubleshooting_ollama_diagnostic_uses_config_path_variable() 
 
 
 def test_commands_reference_includes_canonical_patterns_with_config_path() -> None:
-    content = (SKILL_DIR / "references" / "commands.md").read_text(encoding="utf-8")
+    content = COMMANDS_FILE.read_text(encoding="utf-8")
     for command in CANONICAL_WORKFLOW_COMMANDS:
         assert command in content
 
 
 def test_commands_reference_includes_post_step_verification_commands() -> None:
-    content = (SKILL_DIR / "references" / "commands.md").read_text(encoding="utf-8")
+    content = COMMANDS_FILE.read_text(encoding="utf-8")
     for command in POST_STEP_VERIFICATION_COMMANDS:
         assert command in content
 
 
 def test_commands_reference_uses_default_config_path() -> None:
-    content = (SKILL_DIR / "references" / "commands.md").read_text(encoding="utf-8")
+    content = COMMANDS_FILE.read_text(encoding="utf-8")
     assert DEFAULT_CONFIG_PATH in content
     assert "config.toml" not in content
+
+
+def test_summarize_force_all_is_not_documented_in_readme_or_workflow_skill_docs() -> None:
+    summarize_docs = {
+        "README.md": README_FILE.read_text(encoding="utf-8"),
+        "SKILL.md": SKILL_FILE.read_text(encoding="utf-8"),
+        "commands.md": COMMANDS_FILE.read_text(encoding="utf-8"),
+    }
+    for name, content in summarize_docs.items():
+        assert "summarize --force-all" not in content, f"{name} still references summarize --force-all"
+
+
+def test_summarize_card_scope_rebuild_options_are_documented() -> None:
+    summarize_docs = {
+        "README.md": README_FILE.read_text(encoding="utf-8"),
+        "SKILL.md": SKILL_FILE.read_text(encoding="utf-8"),
+        "commands.md": COMMANDS_FILE.read_text(encoding="utf-8"),
+    }
+    for name, content in summarize_docs.items():
+        for scope in SUMMARIZE_CARD_SCOPE_FLAGS:
+            assert scope in content, f"{name} missing summarize rebuild scope: {scope}"
+
+
+def test_summarize_default_incremental_behavior_is_documented() -> None:
+    summarize_docs = {
+        "README.md": README_FILE.read_text(encoding="utf-8"),
+        "SKILL.md": SKILL_FILE.read_text(encoding="utf-8"),
+        "commands.md": COMMANDS_FILE.read_text(encoding="utf-8"),
+    }
+    for name, content in summarize_docs.items():
+        assert SUMMARIZE_INCREMENTAL_MARKER in content, (
+            f"{name} missing summarize incremental default guidance"
+        )
 
 
 def test_dedupe_reference_includes_source_path_mismatch_flow() -> None:

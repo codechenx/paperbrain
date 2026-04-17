@@ -47,14 +47,23 @@ Run summarize after ingest to generate or refresh cards:
 paperbrain summarize --config-path "$CONFIG_PATH"
 ```
 
+Default summarize behavior is incremental related-card updates.
+
+Use explicit rebuild scopes only when a targeted or full refresh is required:
+
+```bash
+paperbrain summarize --card-scope all --config-path "$CONFIG_PATH"
+paperbrain summarize --card-scope paper --config-path "$CONFIG_PATH"
+paperbrain summarize --card-scope person --config-path "$CONFIG_PATH"
+paperbrain summarize --card-scope topic --config-path "$CONFIG_PATH"
+```
+
 Post-summarize verification commands:
 
 ```bash
 paperbrain search "<title keyword>" --top-k 3 --include-cards --config-path "$CONFIG_PATH"
 paperbrain stats --config-path "$CONFIG_PATH"
 ```
-
-`--force-all` can be expensive and overwrite previous summaries; use it only for explicit full rebuilds.
 
 ## Canonical export pattern
 

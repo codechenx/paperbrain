@@ -497,8 +497,8 @@ def test_fetch_paper_cards_by_slugs_decodes_payloads() -> None:
     cards = repo.fetch_paper_cards_by_slugs(["papers/a", "papers/b"])
 
     assert cards == [
-        {"summary": "Alpha", "slug": "papers/a", "type": "paper"},
-        {"summary": "Beta", "slug": "papers/b", "type": "paper"},
+        {"summary": "Alpha", "slug": "papers/a", "type": "article"},
+        {"summary": "Beta", "slug": "papers/b", "type": "article"},
     ]
     sql, params = connection.executed[0]
     assert "SELECT slug, body" in sql
@@ -529,3 +529,41 @@ def test_fetch_person_cards_by_slugs_decodes_payloads() -> None:
     assert "slug = ANY(%s)" in sql
     assert "ORDER BY slug;" in sql
     assert params == (["people/alice", "people/bob"],)
+
+
+def test_fetch_paper_cards_by_slugs_enforces_canonical_slug_and_type() -> None:
+    connection = FakeConnection(rows=(("papers/a", {"slug": "papers/wrong", "type": "paper", "summary": "Alpha"}),))
+    repo = PostgresRepo(connection)
+
+    cards = repo.fetch_paper_cards_by_slugs(["papers/a"])
+
+    assert cards == [{"slug": "papers/a", "type": "article", "summary": "Alpha"}]
+
+
+def test_fetch_person_cards_by_slugs_enforces_canonical_slug_and_type() -> None:
+    connection = FakeConnection(rows=(("people/alice", {"slug": "people/wrong", "type": "topic", "name": "Alice"}),))
+    repo = PostgresRepo(connection)
+
+    cards = repo.fetch_person_cards_by_slugs(["people/alice"])
+
+    assert cards == [{"slug": "people/alice", "type": "person", "name": "Alice"}]
+
+
+def test_fetch_paper_cards_by_slugs_empty_input_skips_sql() -> None:
+    connection = FakeConnection()
+    repo = PostgresRepo(connection)
+
+    cards = repo.fetch_paper_cards_by_slugs([])
+
+    assert cards == []
+    assert connection.executed == []
+
+
+def test_fetch_person_cards_by_slugs_empty_input_skips_sql() -> None:
+    connection = FakeConnection()
+    repo = PostgresRepo(connection)
+
+    cards = repo.fetch_person_cards_by_slugs([])
+
+    assert cards == []
+    assert connection.executed == []

@@ -309,8 +309,8 @@ class PostgresRepo:
         output: list[dict] = []
         for slug, body in rows:
             card = _decode_card_payload(body)
-            card.setdefault("slug", str(slug))
-            card.setdefault("type", "paper")
+            card["slug"] = str(slug)
+            card["type"] = "article"
             output.append(card)
         return output
 
@@ -329,8 +329,8 @@ class PostgresRepo:
         output: list[dict] = []
         for slug, body in rows:
             card = _decode_card_payload(body)
-            card.setdefault("slug", str(slug))
-            card.setdefault("type", "person")
+            card["slug"] = str(slug)
+            card["type"] = "person"
             output.append(card)
         return output
 

@@ -644,6 +644,130 @@ def test_summarize_incremental_related_only_updates_affected_people_and_topics()
     assert result.topic_cards == 1
 
 
+def test_summarize_incremental_topics_use_regenerated_person_cards_for_affected_people() -> None:
+    class IncrementalMergeRepo:
+        def __init__(self) -> None:
+            self.paper_cards: list[dict] = []
+            self.person_cards: list[dict] = []
+            self.topic_cards: list[dict] = []
+
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            _ = force_all
+            return [
+                FakePaper(
+                    slug="papers/new-article",
+                    title="New Article",
+                    journal="J",
+                    year=2024,
+                    authors=["A"],
+                    corresponding_authors=["A <a@example.org>"],
+                    full_text="A",
+                ),
+                FakePaper(
+                    slug="papers/new-review",
+                    title="New Review",
+                    journal="J",
+                    year=2024,
+                    authors=["B"],
+                    corresponding_authors=["B <b@example.org>"],
+                    full_text="B",
+                ),
+            ]
+
+        def upsert_paper_card(self, card: dict) -> None:
+            self.paper_cards.append(copy.deepcopy(card))
+
+        def list_person_slugs_linked_to_paper_slugs(self, paper_slugs: list[str]) -> list[str]:
+            _ = paper_slugs
+            return ["people/existing"]
+
+        def list_paper_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+            _ = person_slugs
+            return ["papers/context-article"]
+
+        def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
+            by_slug = {
+                "papers/context-article": {"slug": "papers/context-article", "type": "article", "paper_type": "article"},
+                "papers/new-article": {"slug": "papers/new-article", "type": "article", "paper_type": "article"},
+                "papers/new-review": {"slug": "papers/new-review", "type": "article", "paper_type": "review"},
+            }
+            return [copy.deepcopy(by_slug[slug]) for slug in paper_slugs if slug in by_slug]
+
+        def list_topic_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+            _ = person_slugs
+            return ["topics/existing-topic"]
+
+        def list_person_slugs_linked_to_topic_slugs(self, topic_slugs: list[str]) -> list[str]:
+            _ = topic_slugs
+            return ["people/context-only", "people/existing"]
+
+        def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
+            _ = person_slugs
+            return [
+                {"slug": "people/context-only", "type": "person", "state": "db"},
+                {"slug": "people/existing", "type": "person", "state": "stale"},
+            ]
+
+        def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = replace_existing
+            self.person_cards = copy.deepcopy(cards)
+
+        def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = replace_existing
+            self.topic_cards = copy.deepcopy(cards)
+
+    class IncrementalMergeLLM:
+        def __init__(self) -> None:
+            self.topic_input_state: dict[str, str] = {}
+
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            paper_type = "article" if metadata["slug"] == "papers/new-article" else "review"
+            return {
+                "slug": metadata["slug"],
+                "type": "article",
+                "paper_type": paper_type,
+                "title": metadata["title"],
+            }
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            slugs = [card["slug"] for card in paper_cards]
+            if slugs == ["papers/new-article"]:
+                return [{"slug": "people/new-author", "type": "person"}]
+            return [
+                {
+                    "slug": "people/existing",
+                    "type": "person",
+                    "state": "regenerated",
+                }
+            ]
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            self.topic_input_state = {
+                str(card.get("slug", "")).strip(): str(card.get("state", "")).strip() for card in person_cards
+            }
+            return [
+                {
+                    "slug": "topics/existing-topic",
+                    "type": "topic",
+                    "topic": "Existing Topic",
+                    "related_people": ["people/existing"],
+                }
+            ]
+
+    repo = IncrementalMergeRepo()
+    llm = IncrementalMergeLLM()
+
+    SummarizeService(repo=repo, llm=llm).run(card_scope=None)
+
+    assert llm.topic_input_state == {
+        "people/context-only": "db",
+        "people/existing": "regenerated",
+    }
+    assert repo.person_cards[0]["focus_area"] == ["Existing Topic"]
+    assert [card["slug"] for card in repo.topic_cards] == ["topics/existing-topic"]
+
+
 def test_summarize_generates_person_topic_when_corresponding_authors_inferred() -> None:
     class MissingAuthorRepo(FakeRepo):
         def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:

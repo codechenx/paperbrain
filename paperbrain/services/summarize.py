@@ -151,7 +151,7 @@ class SummarizeService:
             context_paper_cards = self.repo.fetch_paper_cards_by_slugs(context_paper_slugs)
             regenerated_person_cards = self.llm.derive_person_cards(self._article_cards(context_paper_cards))
         affected_person_slug_set = set(affected_person_slugs)
-        person_cards = [
+        affected_person_cards = [
             card
             for card in regenerated_person_cards
             if str(card.get("slug", "")).strip() in affected_person_slug_set
@@ -162,7 +162,16 @@ class SummarizeService:
         if affected_topic_slugs:
             context_person_slugs = self.repo.list_person_slugs_linked_to_topic_slugs(affected_topic_slugs)
             context_person_cards = self.repo.fetch_person_cards_by_slugs(context_person_slugs)
-            regenerated_topic_cards = self.llm.derive_topic_cards(context_person_cards)
+            affected_person_cards_by_slug = {
+                slug: card
+                for card in affected_person_cards
+                if (slug := str(card.get("slug", "")).strip())
+            }
+            topic_input_person_cards = [
+                affected_person_cards_by_slug.get(str(card.get("slug", "")).strip(), card)
+                for card in context_person_cards
+            ]
+            regenerated_topic_cards = self.llm.derive_topic_cards(topic_input_person_cards)
         affected_topic_slug_set = set(affected_topic_slugs)
         topic_cards = [
             card
@@ -170,14 +179,14 @@ class SummarizeService:
             if str(card.get("slug", "")).strip() in affected_topic_slug_set
         ]
 
-        if person_cards and topic_cards:
-            _apply_person_focus_areas(person_cards, topic_cards)
+        if affected_person_cards and topic_cards:
+            _apply_person_focus_areas(affected_person_cards, topic_cards)
 
-        self.repo.upsert_person_cards(person_cards, replace_existing=False)
+        self.repo.upsert_person_cards(affected_person_cards, replace_existing=False)
         self.repo.upsert_topic_cards(topic_cards, replace_existing=False)
         return SummaryStats(
             paper_cards=len(paper_cards),
-            person_cards=len(person_cards),
+            person_cards=len(affected_person_cards),
             topic_cards=len(topic_cards),
         )
 

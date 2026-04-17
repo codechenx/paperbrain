@@ -172,7 +172,10 @@ def summarize(
     normalized_scope = card_scope.strip().lower() if card_scope is not None else None
     if normalized_scope is not None and normalized_scope not in SUPPORTED_CARD_SCOPES:
         allowed_values = ", ".join(SUPPORTED_CARD_SCOPES)
-        raise ValueError(f"Invalid --card-scope '{card_scope}'. Allowed values: {allowed_values}")
+        raise typer.BadParameter(
+            f"Allowed values: {allowed_values}",
+            param_hint="'--card-scope'",
+        )
 
     runtime = build_runtime(config_path)
     with repo_from_url(runtime.config.database_url) as repo:

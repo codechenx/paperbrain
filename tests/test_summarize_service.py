@@ -415,6 +415,45 @@ def test_summarize_card_scope_person_rebuilds_people_only_from_article_cards() -
     assert result.topic_cards == 0
 
 
+def test_summarize_card_scope_person_skips_upsert_when_no_article_source_cards() -> None:
+    class PersonScopeEmptySourceRepo:
+        def __init__(self) -> None:
+            self.upsert_calls = 0
+
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            _ = force_all
+            return [FakePaper("papers/review-a", "A", "J", 2024, ["A"], ["A <a@example.org>"], "A")]
+
+        def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
+            _ = paper_slugs
+            return [{"slug": "papers/review-a", "type": "article", "paper_type": "review"}]
+
+        def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = cards, replace_existing
+            self.upsert_calls += 1
+
+    class PersonScopeEmptySourceLLM:
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            assert paper_cards == []
+            return []
+
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text, metadata
+            raise AssertionError("paper summarization must not run for person scope")
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            _ = person_cards
+            raise AssertionError("topic derivation must not run for person scope")
+
+    repo = PersonScopeEmptySourceRepo()
+    result = SummarizeService(repo=repo, llm=PersonScopeEmptySourceLLM()).run(card_scope="person")
+
+    assert repo.upsert_calls == 0
+    assert result.paper_cards == 0
+    assert result.person_cards == 0
+    assert result.topic_cards == 0
+
+
 def test_summarize_card_scope_topic_rebuilds_topics_only_from_all_person_cards() -> None:
     class TopicOnlyRepo:
         def __init__(self) -> None:
@@ -485,6 +524,44 @@ def test_summarize_card_scope_topic_rebuilds_topics_only_from_all_person_cards()
     assert result.paper_cards == 0
     assert result.person_cards == 0
     assert result.topic_cards == 1
+
+
+def test_summarize_card_scope_topic_skips_upsert_when_no_source_person_cards() -> None:
+    class TopicScopeEmptySourceRepo:
+        def __init__(self) -> None:
+            self.upsert_calls = 0
+
+        def list_all_person_slugs(self) -> list[str]:
+            return []
+
+        def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
+            assert person_slugs == []
+            return []
+
+        def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = cards, replace_existing
+            self.upsert_calls += 1
+
+    class TopicScopeEmptySourceLLM:
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            assert person_cards == []
+            return []
+
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text, metadata
+            raise AssertionError("paper summarization must not run for topic scope")
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            _ = paper_cards
+            raise AssertionError("person derivation must not run for topic scope")
+
+    repo = TopicScopeEmptySourceRepo()
+    result = SummarizeService(repo=repo, llm=TopicScopeEmptySourceLLM()).run(card_scope="topic")
+
+    assert repo.upsert_calls == 0
+    assert result.paper_cards == 0
+    assert result.person_cards == 0
+    assert result.topic_cards == 0
 
 
 def test_summarize_rejects_invalid_card_scope() -> None:

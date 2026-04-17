@@ -111,12 +111,17 @@ class SummarizeService:
 
         if normalized_scope == "person":
             paper_cards = self._fetch_all_paper_cards()
-            person_cards = self.llm.derive_person_cards(self._article_cards(paper_cards))
+            source_article_cards = self._article_cards(paper_cards)
+            if not source_article_cards:
+                return SummaryStats(paper_cards=0, person_cards=0, topic_cards=0)
+            person_cards = self.llm.derive_person_cards(source_article_cards)
             self.repo.upsert_person_cards(person_cards, replace_existing=True)
             return SummaryStats(paper_cards=0, person_cards=len(person_cards), topic_cards=0)
 
         if normalized_scope == "topic":
             person_cards = self._fetch_all_person_cards()
+            if not person_cards:
+                return SummaryStats(paper_cards=0, person_cards=0, topic_cards=0)
             topic_cards = self.llm.derive_topic_cards(person_cards)
             self.repo.upsert_topic_cards(topic_cards, replace_existing=True)
             return SummaryStats(paper_cards=0, person_cards=0, topic_cards=len(topic_cards))

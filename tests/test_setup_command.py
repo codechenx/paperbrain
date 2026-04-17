@@ -1103,7 +1103,7 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
             calls["repo"] = repo
             calls["llm_seen"] = isinstance(llm, FakeSummaryAdapter)
 
-        def run(self, card_scope: str | None) -> SummaryStats:
+        def run(self, *, card_scope: str | None) -> SummaryStats:
             calls["run_card_scope"] = card_scope
             return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
 
@@ -1180,7 +1180,7 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
             calls["repo"] = repo
             calls["llm_seen"] = isinstance(llm, FakeGeminiSummaryAdapter)
 
-        def run(self, card_scope: str | None) -> SummaryStats:
+        def run(self, *, card_scope: str | None) -> SummaryStats:
             calls["run_card_scope"] = card_scope
             return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
 
@@ -1268,7 +1268,7 @@ def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
             calls["repo"] = repo
             calls["llm_seen"] = isinstance(llm, FakeOllamaSummaryAdapter)
 
-        def run(self, card_scope: str | None) -> SummaryStats:
+        def run(self, *, card_scope: str | None) -> SummaryStats:
             calls["run_card_scope"] = card_scope
             return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
 

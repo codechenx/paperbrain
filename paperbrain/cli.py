@@ -171,12 +171,7 @@ def summarize(
     runtime = build_runtime(config_path)
     with repo_from_url(runtime.config.database_url) as repo:
         summarize_service = SummarizeService(repo=repo, llm=runtime.llm)
-        try:
-            stats = summarize_service.run(card_scope=card_scope)
-        except TypeError as exc:
-            if "unexpected keyword argument 'card_scope'" not in str(exc):
-                raise
-            stats = summarize_service.run(force_all=card_scope == "all")
+        stats = summarize_service.run(card_scope=card_scope)
     typer.echo(f"Summarized cards: papers={stats.paper_cards} people={stats.person_cards} topics={stats.topic_cards}")
 
 

@@ -1137,6 +1137,24 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
     assert calls["run_card_scope"] is None
 
 
+def test_cli_summarize_rejects_invalid_card_scope() -> None:
+    runner = CliRunner()
+
+    with pytest.raises(
+        ValueError,
+        match=r"Invalid --card-scope 'invalid'. Allowed values: all, paper, person, topic",
+    ):
+        runner.invoke(app, ["summarize", "--card-scope", "invalid"], catch_exceptions=False)
+
+
+def test_cli_summarize_rejects_legacy_force_all_flag() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["summarize", "--force-all"])
+
+    assert result.exit_code != 0
+    assert "No such option: --force-all" in result.output
+
+
 def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
     monkeypatch: Any, tmp_path: Path
 ) -> None:

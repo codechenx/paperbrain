@@ -169,7 +169,7 @@ def test_summarize_persists_cards_and_returns_counts() -> None:
     llm = FakeLLM()
     service = SummarizeService(repo=repo, llm=llm)
 
-    result = service.run(force_all=False)
+    result = service.run(card_scope=None)
 
     assert repo.force_all_seen is False
     assert repo.calls == ["paper", "paper", "person", "topic"]
@@ -183,6 +183,16 @@ def test_summarize_persists_cards_and_returns_counts() -> None:
     assert result.paper_cards == 2
     assert result.person_cards == 2
     assert result.topic_cards == 1
+
+
+def test_summarize_card_scope_all_maps_to_force_all() -> None:
+    repo = FakeRepo()
+    llm = FakeLLM()
+
+    result = SummarizeService(repo=repo, llm=llm).run(card_scope="all")
+
+    assert repo.force_all_seen is True
+    assert result.paper_cards == 2
 
 
 def test_summarize_generates_person_topic_when_corresponding_authors_inferred() -> None:
@@ -236,7 +246,7 @@ def test_summarize_generates_person_topic_when_corresponding_authors_inferred() 
 
     repo = MissingAuthorRepo()
     llm = InferenceLLM()
-    result = SummarizeService(repo=repo, llm=llm).run(force_all=True)
+    result = SummarizeService(repo=repo, llm=llm).run(card_scope="all")
 
     assert result.paper_cards == 1
     assert result.person_cards == 1
@@ -294,7 +304,7 @@ def test_summarize_focus_area_from_generated_topics() -> None:
     repo = TopicLinkRepo()
     llm = TopicLinkLLM()
 
-    result = SummarizeService(repo=repo, llm=llm).run(force_all=False)
+    result = SummarizeService(repo=repo, llm=llm).run(card_scope=None)
 
     assert result.paper_cards == 1
     assert result.person_cards == 1
@@ -363,7 +373,7 @@ def test_summarize_raises_value_error_when_person_has_no_linked_topic() -> None:
     llm = MissingTopicLLM()
 
     with pytest.raises(ValueError, match=r"No linked topics found for person card"):
-        SummarizeService(repo=repo, llm=llm).run(force_all=False)
+        SummarizeService(repo=repo, llm=llm).run(card_scope=None)
 
 
 def test_postgres_list_papers_for_summary_decodes_json_columns() -> None:
@@ -487,7 +497,7 @@ def test_summarize_does_not_delete_existing_paper_links_when_cards_omit_paper_re
                 }
             ]
 
-    result = SummarizeService(repo=repo, llm=SparseLLM()).run(force_all=False)
+    result = SummarizeService(repo=repo, llm=SparseLLM()).run(card_scope=None)
 
     executed_sql = "\n".join(sql for sql, _ in connection.executed)
     assert "DELETE FROM paper_person_links" not in executed_sql
@@ -522,7 +532,7 @@ def test_summarize_focus_area_from_generated_topics() -> None:
 
     repo = FakeRepo()
     llm = FocusAreaLLM()
-    SummarizeService(repo=repo, llm=llm).run(force_all=False)
+    SummarizeService(repo=repo, llm=llm).run(card_scope=None)
 
     assert repo.person_cards[0]["focus_area"] == ["Cancer Genetics"]
 
@@ -548,7 +558,7 @@ def test_summarize_derives_topics_before_persisting_people() -> None:
 
     llm = TwoPassLLM()
     repo = OrderCheckingRepo(llm)
-    SummarizeService(repo=repo, llm=llm).run(force_all=False)
+    SummarizeService(repo=repo, llm=llm).run(card_scope=None)
 
 
 def test_summarize_no_linked_topic_raises_value_error() -> None:
@@ -579,7 +589,7 @@ def test_summarize_no_linked_topic_raises_value_error() -> None:
 
     repo = FakeRepo()
     with pytest.raises(ValueError, match=r"No linked topics found for person card"):
-        SummarizeService(repo=repo, llm=NoTopicLinkLLM()).run(force_all=False)
+        SummarizeService(repo=repo, llm=NoTopicLinkLLM()).run(card_scope=None)
 
     assert repo.calls == ["paper", "paper"]
     assert repo.person_cards == []
@@ -634,7 +644,7 @@ def test_summarize_article_cards_only_used_for_person_derivation() -> None:
     repo = FakeRepo()
     llm = MixedCardTypesLLM()
 
-    result = SummarizeService(repo=repo, llm=llm).run(force_all=False)
+    result = SummarizeService(repo=repo, llm=llm).run(card_scope=None)
 
     assert result.paper_cards == 2
     assert result.person_cards == 1
@@ -665,7 +675,7 @@ def test_summarize_review_only_papers_produce_no_person_or_topic_cards() -> None
     repo = FakeRepo()
     llm = ReviewOnlyLLM()
 
-    result = SummarizeService(repo=repo, llm=llm).run(force_all=False)
+    result = SummarizeService(repo=repo, llm=llm).run(card_scope=None)
 
     assert llm.person_input == []
     assert llm.topic_input == []

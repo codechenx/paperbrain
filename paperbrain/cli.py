@@ -34,6 +34,7 @@ from paperbrain.services.summarize import SummarizeService
 
 app = typer.Typer(no_args_is_help=True, help="PaperBrain CLI")
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "paperbrain" / "paperbrain.conf"
+SUPPORTED_CARD_SCOPES = ("all", "paper", "person", "topic")
 
 
 @dataclass(slots=True)
@@ -168,10 +169,15 @@ def summarize(
     card_scope: str | None = typer.Option(None, "--card-scope"),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
 ) -> None:
+    normalized_scope = card_scope.strip().lower() if card_scope is not None else None
+    if normalized_scope is not None and normalized_scope not in SUPPORTED_CARD_SCOPES:
+        allowed_values = ", ".join(SUPPORTED_CARD_SCOPES)
+        raise ValueError(f"Invalid --card-scope '{card_scope}'. Allowed values: {allowed_values}")
+
     runtime = build_runtime(config_path)
     with repo_from_url(runtime.config.database_url) as repo:
         summarize_service = SummarizeService(repo=repo, llm=runtime.llm)
-        stats = summarize_service.run(card_scope=card_scope)
+        stats = summarize_service.run(card_scope=normalized_scope)
     typer.echo(f"Summarized cards: papers={stats.paper_cards} people={stats.person_cards} topics={stats.topic_cards}")
 
 

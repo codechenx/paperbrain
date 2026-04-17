@@ -2,6 +2,8 @@ from typing import Protocol
 
 from paperbrain.models import SummaryStats
 
+_SUPPORTED_CARD_SCOPES = {"all", "paper", "person", "topic"}
+
 
 def _as_string_list(value: object) -> list[str]:
     if isinstance(value, str):
@@ -77,7 +79,12 @@ class SummarizeService:
         self.repo = repo
         self.llm = llm
 
-    def run(self, force_all: bool) -> SummaryStats:
+    def run(self, card_scope: str | None = None) -> SummaryStats:
+        normalized_scope = card_scope.strip().lower() if card_scope is not None else None
+        if normalized_scope is not None and normalized_scope not in _SUPPORTED_CARD_SCOPES:
+            allowed = ", ".join(sorted(_SUPPORTED_CARD_SCOPES))
+            raise ValueError(f"Invalid card_scope '{card_scope}'. Allowed values: {allowed}")
+        force_all = normalized_scope == "all"
         papers = self.repo.list_papers_for_summary(force_all)
         paper_cards: list[dict] = []
         for paper in papers:

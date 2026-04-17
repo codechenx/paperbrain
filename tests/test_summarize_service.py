@@ -26,6 +26,7 @@ class FakeRepo:
         self.person_cards: list[dict] = []
         self.topic_cards: list[dict] = []
         self.calls: list[str] = []
+        self._last_topic_person_slugs: list[str] = []
 
     def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
         self.force_all_seen = force_all
@@ -53,6 +54,40 @@ class FakeRepo:
     def upsert_paper_card(self, card: dict) -> None:
         self.calls.append("paper")
         self.paper_cards.append(card)
+
+    def list_person_slugs_linked_to_paper_slugs(self, paper_slugs: list[str]) -> list[str]:
+        _ = paper_slugs
+        return []
+
+    def list_topic_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+        self._last_topic_person_slugs = list(person_slugs)
+        return ["topics/cancer-genetics"] if person_slugs else []
+
+    def list_paper_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+        _ = person_slugs
+        return [str(card.get("slug", "")).strip() for card in self.paper_cards if str(card.get("slug", "")).strip()]
+
+    def list_person_slugs_linked_to_topic_slugs(self, topic_slugs: list[str]) -> list[str]:
+        _ = topic_slugs
+        return list(self._last_topic_person_slugs)
+
+    def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
+        by_slug = {str(card.get("slug", "")).strip(): copy.deepcopy(card) for card in self.paper_cards}
+        return [by_slug[slug] for slug in paper_slugs if slug in by_slug]
+
+    def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
+        by_slug = {str(card.get("slug", "")).strip(): copy.deepcopy(card) for card in self.person_cards}
+        if by_slug:
+            return [by_slug[slug] for slug in person_slugs if slug in by_slug]
+        fallback_paper_slug = str(self.paper_cards[0].get("slug", "")).strip() if self.paper_cards else ""
+        return [
+            {
+                "slug": slug,
+                "type": "person",
+                "related_papers": [fallback_paper_slug] if fallback_paper_slug else [],
+            }
+            for slug in person_slugs
+        ]
 
     def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
         _ = replace_existing
@@ -174,7 +209,7 @@ def test_summarize_persists_cards_and_returns_counts() -> None:
     assert repo.force_all_seen is False
     assert repo.calls == ["paper", "paper", "person", "topic"]
     assert llm.person_input == repo.paper_cards
-    assert llm.topic_input == repo.person_cards
+    assert [card["slug"] for card in llm.topic_input or []] == [card["slug"] for card in repo.person_cards]
     assert all(card["focus_area"] for card in repo.person_cards)
     assert [card["slug"] for card in repo.paper_cards] == [
         "papers/chen-p53-nature-2024-abc123",
@@ -193,6 +228,414 @@ def test_summarize_card_scope_all_maps_to_force_all() -> None:
 
     assert repo.force_all_seen is True
     assert result.paper_cards == 2
+
+
+def test_summarize_card_scope_paper_rebuilds_papers_only() -> None:
+    class PaperOnlyRepo:
+        def __init__(self) -> None:
+            self.force_all_seen: bool | None = None
+            self.paper_cards: list[dict] = []
+
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            self.force_all_seen = force_all
+            return [
+                FakePaper(
+                    slug="papers/a",
+                    title="A",
+                    journal="J",
+                    year=2024,
+                    authors=["A"],
+                    corresponding_authors=["A <a@example.org>"],
+                    full_text="A",
+                ),
+                FakePaper(
+                    slug="papers/b",
+                    title="B",
+                    journal="J",
+                    year=2024,
+                    authors=["B"],
+                    corresponding_authors=["B <b@example.org>"],
+                    full_text="B",
+                ),
+            ]
+
+        def upsert_paper_card(self, card: dict) -> None:
+            self.paper_cards.append(card)
+
+        def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = cards, replace_existing
+            raise AssertionError("person cards must not be upserted for paper scope")
+
+        def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = cards, replace_existing
+            raise AssertionError("topic cards must not be upserted for paper scope")
+
+    class PaperOnlyLLM:
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            return {
+                "slug": metadata["slug"],
+                "type": "article",
+                "paper_type": "article",
+                "title": metadata["title"],
+            }
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            _ = paper_cards
+            raise AssertionError("person derivation must not run for paper scope")
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            _ = person_cards
+            raise AssertionError("topic derivation must not run for paper scope")
+
+    repo = PaperOnlyRepo()
+    result = SummarizeService(repo=repo, llm=PaperOnlyLLM()).run(card_scope="paper")
+
+    assert repo.force_all_seen is True
+    assert [card["slug"] for card in repo.paper_cards] == ["papers/a", "papers/b"]
+    assert result.paper_cards == 2
+    assert result.person_cards == 0
+    assert result.topic_cards == 0
+
+
+def test_summarize_card_scope_person_rebuilds_people_only_from_article_cards() -> None:
+    class PersonOnlyRepo:
+        def __init__(self) -> None:
+            self.force_all_seen: bool | None = None
+            self.paper_slugs_seen: list[str] | None = None
+            self.person_cards: list[dict] = []
+            self.replace_existing_flags: list[bool] = []
+
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            self.force_all_seen = force_all
+            return [
+                FakePaper(
+                    slug="papers/article-a",
+                    title="A",
+                    journal="J",
+                    year=2024,
+                    authors=["A"],
+                    corresponding_authors=["A <a@example.org>"],
+                    full_text="A",
+                ),
+                FakePaper(
+                    slug="papers/review-b",
+                    title="B",
+                    journal="J",
+                    year=2024,
+                    authors=["B"],
+                    corresponding_authors=["B <b@example.org>"],
+                    full_text="B",
+                ),
+            ]
+
+        def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
+            self.paper_slugs_seen = list(paper_slugs)
+            return [
+                {"slug": "papers/article-a", "type": "article", "paper_type": "article"},
+                {"slug": "papers/review-b", "type": "article", "paper_type": "review"},
+            ]
+
+        def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            self.person_cards = copy.deepcopy(cards)
+            self.replace_existing_flags.append(replace_existing)
+
+        def upsert_paper_card(self, card: dict) -> None:
+            _ = card
+            raise AssertionError("paper cards must not be upserted for person scope")
+
+        def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = cards, replace_existing
+            raise AssertionError("topic cards must not be upserted for person scope")
+
+    class PersonOnlyLLM:
+        def __init__(self) -> None:
+            self.person_input: list[dict] | None = None
+
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text, metadata
+            raise AssertionError("paper summarization must not run for person scope")
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            self.person_input = list(paper_cards)
+            return [
+                {
+                    "slug": "people/a",
+                    "type": "person",
+                    "related_papers": ["papers/article-a"],
+                    "focus_area": ["Oncology"],
+                }
+            ]
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            _ = person_cards
+            raise AssertionError("topic derivation must not run for person scope")
+
+    repo = PersonOnlyRepo()
+    llm = PersonOnlyLLM()
+    result = SummarizeService(repo=repo, llm=llm).run(card_scope="person")
+
+    assert repo.force_all_seen is True
+    assert repo.paper_slugs_seen == ["papers/article-a", "papers/review-b"]
+    assert [card["slug"] for card in llm.person_input or []] == ["papers/article-a"]
+    assert repo.replace_existing_flags == [True]
+    assert [card["slug"] for card in repo.person_cards] == ["people/a"]
+    assert result.paper_cards == 0
+    assert result.person_cards == 1
+    assert result.topic_cards == 0
+
+
+def test_summarize_card_scope_topic_rebuilds_topics_only_from_all_person_cards() -> None:
+    class TopicOnlyRepo:
+        def __init__(self) -> None:
+            self.force_all_seen: bool | None = None
+            self.paper_slugs_seen: list[str] | None = None
+            self.topic_cards: list[dict] = []
+            self.replace_existing_flags: list[bool] = []
+            self.people_from_topics_seen: list[str] | None = None
+
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            self.force_all_seen = force_all
+            return [
+                FakePaper(
+                    slug="papers/article-a",
+                    title="A",
+                    journal="J",
+                    year=2024,
+                    authors=["A"],
+                    corresponding_authors=["A <a@example.org>"],
+                    full_text="A",
+                )
+            ]
+
+        def list_person_slugs_linked_to_paper_slugs(self, paper_slugs: list[str]) -> list[str]:
+            self.paper_slugs_seen = list(paper_slugs)
+            return ["people/a", "people/b"]
+
+        def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
+            return [
+                {"slug": "people/a", "type": "person", "related_papers": ["papers/article-a"]},
+                {"slug": "people/b", "type": "person", "related_papers": ["papers/article-a"]},
+            ]
+
+        def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            self.topic_cards = copy.deepcopy(cards)
+            self.replace_existing_flags.append(replace_existing)
+
+        def upsert_paper_card(self, card: dict) -> None:
+            _ = card
+            raise AssertionError("paper cards must not be upserted for topic scope")
+
+        def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = cards, replace_existing
+            raise AssertionError("person cards must not be upserted for topic scope")
+
+    class TopicOnlyLLM:
+        def __init__(self) -> None:
+            self.topic_input: list[dict] | None = None
+
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text, metadata
+            raise AssertionError("paper summarization must not run for topic scope")
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            _ = paper_cards
+            raise AssertionError("person derivation must not run for topic scope")
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            self.topic_input = list(person_cards)
+            return [
+                {
+                    "slug": "topics/t1",
+                    "type": "topic",
+                    "topic": "Topic 1",
+                    "related_people": ["people/a", "people/b"],
+                }
+            ]
+
+    repo = TopicOnlyRepo()
+    llm = TopicOnlyLLM()
+    result = SummarizeService(repo=repo, llm=llm).run(card_scope="topic")
+
+    assert repo.force_all_seen is True
+    assert repo.paper_slugs_seen == ["papers/article-a"]
+    assert [card["slug"] for card in llm.topic_input or []] == ["people/a", "people/b"]
+    assert repo.replace_existing_flags == [True]
+    assert [card["slug"] for card in repo.topic_cards] == ["topics/t1"]
+    assert result.paper_cards == 0
+    assert result.person_cards == 0
+    assert result.topic_cards == 1
+
+
+def test_summarize_incremental_related_only_updates_affected_people_and_topics() -> None:
+    class IncrementalRepo:
+        def __init__(self) -> None:
+            self.force_all_seen: bool | None = None
+            self.paper_cards: list[dict] = []
+            self.person_cards: list[dict] = []
+            self.topic_cards: list[dict] = []
+            self.person_replace_existing_flags: list[bool] = []
+            self.topic_replace_existing_flags: list[bool] = []
+            self.person_slugs_from_new_papers_seen: list[str] | None = None
+            self.paper_slugs_for_people_seen: list[str] | None = None
+            self.topic_slugs_for_people_seen: list[str] | None = None
+            self.person_slugs_for_topics_seen: list[str] | None = None
+            self.fetch_paper_slugs_seen: list[str] | None = None
+            self.fetch_person_slugs_seen: list[str] | None = None
+
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            self.force_all_seen = force_all
+            return [
+                FakePaper(
+                    slug="papers/new-article",
+                    title="New Article",
+                    journal="J",
+                    year=2024,
+                    authors=["A"],
+                    corresponding_authors=["A <a@example.org>"],
+                    full_text="A",
+                ),
+                FakePaper(
+                    slug="papers/new-review",
+                    title="New Review",
+                    journal="J",
+                    year=2024,
+                    authors=["B"],
+                    corresponding_authors=["B <b@example.org>"],
+                    full_text="B",
+                ),
+            ]
+
+        def upsert_paper_card(self, card: dict) -> None:
+            self.paper_cards.append(copy.deepcopy(card))
+
+        def list_person_slugs_linked_to_paper_slugs(self, paper_slugs: list[str]) -> list[str]:
+            self.person_slugs_from_new_papers_seen = list(paper_slugs)
+            return ["people/existing"]
+
+        def list_paper_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+            self.paper_slugs_for_people_seen = sorted(person_slugs)
+            return ["papers/context-article", "papers/new-article"]
+
+        def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
+            self.fetch_paper_slugs_seen = sorted(paper_slugs)
+            return [
+                {"slug": "papers/context-article", "type": "article", "paper_type": "article"},
+                {"slug": "papers/new-article", "type": "article", "paper_type": "article"},
+            ]
+
+        def list_topic_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+            self.topic_slugs_for_people_seen = sorted(person_slugs)
+            return ["topics/existing-topic"]
+
+        def list_person_slugs_linked_to_topic_slugs(self, topic_slugs: list[str]) -> list[str]:
+            self.person_slugs_for_topics_seen = list(topic_slugs)
+            return ["people/context-only", "people/existing", "people/new-author"]
+
+        def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
+            self.fetch_person_slugs_seen = sorted(person_slugs)
+            return [
+                {"slug": "people/context-only", "type": "person", "related_papers": ["papers/context-article"]},
+                {"slug": "people/existing", "type": "person", "related_papers": ["papers/context-article"]},
+                {"slug": "people/new-author", "type": "person", "related_papers": ["papers/new-article"]},
+            ]
+
+        def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            self.person_cards = copy.deepcopy(cards)
+            self.person_replace_existing_flags.append(replace_existing)
+
+        def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            self.topic_cards = copy.deepcopy(cards)
+            self.topic_replace_existing_flags.append(replace_existing)
+
+    class IncrementalLLM:
+        def __init__(self) -> None:
+            self.person_inputs: list[list[str]] = []
+            self.topic_inputs: list[list[str]] = []
+
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            paper_type = "article" if metadata["slug"] == "papers/new-article" else "review"
+            return {
+                "slug": metadata["slug"],
+                "type": "article",
+                "paper_type": paper_type,
+                "title": metadata["title"],
+            }
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            slugs = [card["slug"] for card in paper_cards]
+            self.person_inputs.append(slugs)
+            if slugs == ["papers/new-article"]:
+                return [
+                    {
+                        "slug": "people/new-author",
+                        "type": "person",
+                        "related_papers": ["papers/new-article"],
+                    }
+                ]
+            return [
+                {
+                    "slug": "people/context-only",
+                    "type": "person",
+                    "related_papers": ["papers/context-article"],
+                },
+                {
+                    "slug": "people/existing",
+                    "type": "person",
+                    "related_papers": ["papers/context-article"],
+                },
+                {
+                    "slug": "people/new-author",
+                    "type": "person",
+                    "related_papers": ["papers/new-article"],
+                },
+            ]
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            slugs = [card["slug"] for card in person_cards]
+            self.topic_inputs.append(slugs)
+            return [
+                {
+                    "slug": "topics/context-topic",
+                    "type": "topic",
+                    "topic": "Context Topic",
+                    "related_people": ["people/context-only"],
+                },
+                {
+                    "slug": "topics/existing-topic",
+                    "type": "topic",
+                    "topic": "Existing Topic",
+                    "related_people": ["people/existing", "people/new-author"],
+                },
+            ]
+
+    repo = IncrementalRepo()
+    llm = IncrementalLLM()
+    result = SummarizeService(repo=repo, llm=llm).run(card_scope=None)
+
+    assert repo.force_all_seen is False
+    assert [card["slug"] for card in repo.paper_cards] == ["papers/new-article", "papers/new-review"]
+    assert repo.person_slugs_from_new_papers_seen == ["papers/new-article", "papers/new-review"]
+    assert repo.paper_slugs_for_people_seen == ["people/existing", "people/new-author"]
+    assert repo.fetch_paper_slugs_seen == ["papers/context-article", "papers/new-article"]
+    assert repo.topic_slugs_for_people_seen == ["people/existing", "people/new-author"]
+    assert repo.person_slugs_for_topics_seen == ["topics/existing-topic"]
+    assert repo.fetch_person_slugs_seen == ["people/context-only", "people/existing", "people/new-author"]
+    assert llm.person_inputs == [
+        ["papers/new-article"],
+        ["papers/context-article", "papers/new-article"],
+    ]
+    assert llm.topic_inputs == [["people/context-only", "people/existing", "people/new-author"]]
+    assert repo.person_replace_existing_flags == [False]
+    assert repo.topic_replace_existing_flags == [False]
+    assert [card["slug"] for card in repo.person_cards] == ["people/existing", "people/new-author"]
+    assert [card["slug"] for card in repo.topic_cards] == ["topics/existing-topic"]
+    assert repo.person_cards[0]["focus_area"] == ["Existing Topic"]
+    assert repo.person_cards[1]["focus_area"] == ["Existing Topic"]
+    assert result.paper_cards == 2
+    assert result.person_cards == 2
+    assert result.topic_cards == 1
 
 
 def test_summarize_generates_person_topic_when_corresponding_authors_inferred() -> None:
@@ -504,7 +947,7 @@ def test_summarize_does_not_delete_existing_paper_links_when_cards_omit_paper_re
     assert "DELETE FROM paper_topic_links" not in executed_sql
     assert result.paper_cards == 1
     assert result.person_cards == 1
-    assert result.topic_cards == 1
+    assert result.topic_cards == 0
 
 
 def test_summarize_focus_area_from_generated_topics() -> None:
@@ -678,7 +1121,7 @@ def test_summarize_review_only_papers_produce_no_person_or_topic_cards() -> None
     result = SummarizeService(repo=repo, llm=llm).run(card_scope=None)
 
     assert llm.person_input == []
-    assert llm.topic_input == []
+    assert llm.topic_input is None
     assert repo.person_cards == []
     assert repo.topic_cards == []
     assert result.person_cards == 0

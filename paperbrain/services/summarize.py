@@ -53,6 +53,24 @@ class SummaryRepository(Protocol):
     def list_papers_for_summary(self, force_all: bool) -> list:
         ...
 
+    def list_person_slugs_linked_to_paper_slugs(self, paper_slugs: list[str]) -> list[str]:
+        ...
+
+    def list_topic_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+        ...
+
+    def list_paper_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+        ...
+
+    def list_person_slugs_linked_to_topic_slugs(self, topic_slugs: list[str]) -> list[str]:
+        ...
+
+    def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
+        ...
+
+    def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
+        ...
+
     def upsert_paper_card(self, card: dict) -> None:
         ...
 
@@ -84,7 +102,81 @@ class SummarizeService:
         if normalized_scope is not None and normalized_scope not in _SUPPORTED_CARD_SCOPES:
             allowed = ", ".join(sorted(_SUPPORTED_CARD_SCOPES))
             raise ValueError(f"Invalid card_scope '{card_scope}'. Allowed values: {allowed}")
-        force_all = normalized_scope == "all"
+        if normalized_scope == "paper":
+            paper_cards = self._summarize_and_upsert_papers(force_all=True)
+            return SummaryStats(paper_cards=len(paper_cards), person_cards=0, topic_cards=0)
+
+        if normalized_scope == "person":
+            paper_cards = self._fetch_all_paper_cards()
+            person_cards = self.llm.derive_person_cards(self._article_cards(paper_cards))
+            self.repo.upsert_person_cards(person_cards, replace_existing=True)
+            return SummaryStats(paper_cards=0, person_cards=len(person_cards), topic_cards=0)
+
+        if normalized_scope == "topic":
+            person_cards = self._fetch_all_person_cards()
+            topic_cards = self.llm.derive_topic_cards(person_cards)
+            self.repo.upsert_topic_cards(topic_cards, replace_existing=True)
+            return SummaryStats(paper_cards=0, person_cards=0, topic_cards=len(topic_cards))
+
+        if normalized_scope == "all":
+            paper_cards = self._summarize_and_upsert_papers(force_all=True)
+            person_cards = self.llm.derive_person_cards(self._article_cards(paper_cards))
+            topic_cards = self.llm.derive_topic_cards(person_cards)
+            if person_cards and topic_cards:
+                _apply_person_focus_areas(person_cards, topic_cards)
+            self.repo.upsert_person_cards(person_cards, replace_existing=True)
+            self.repo.upsert_topic_cards(topic_cards, replace_existing=True)
+            return SummaryStats(
+                paper_cards=len(paper_cards),
+                person_cards=len(person_cards),
+                topic_cards=len(topic_cards),
+            )
+
+        paper_cards = self._summarize_and_upsert_papers(force_all=False)
+        new_paper_slugs = self._card_slugs(paper_cards)
+        derived_from_new_articles = self.llm.derive_person_cards(self._article_cards(paper_cards))
+        affected_person_slugs = self._merge_unique_slugs(
+            self.repo.list_person_slugs_linked_to_paper_slugs(new_paper_slugs),
+            self._card_slugs(derived_from_new_articles),
+        )
+
+        regenerated_person_cards: list[dict] = []
+        if affected_person_slugs:
+            context_paper_slugs = self.repo.list_paper_slugs_linked_to_person_slugs(affected_person_slugs)
+            context_paper_cards = self.repo.fetch_paper_cards_by_slugs(context_paper_slugs)
+            regenerated_person_cards = self.llm.derive_person_cards(self._article_cards(context_paper_cards))
+        affected_person_slug_set = set(affected_person_slugs)
+        person_cards = [
+            card
+            for card in regenerated_person_cards
+            if str(card.get("slug", "")).strip() in affected_person_slug_set
+        ]
+
+        affected_topic_slugs = self.repo.list_topic_slugs_linked_to_person_slugs(affected_person_slugs)
+        regenerated_topic_cards: list[dict] = []
+        if affected_topic_slugs:
+            context_person_slugs = self.repo.list_person_slugs_linked_to_topic_slugs(affected_topic_slugs)
+            context_person_cards = self.repo.fetch_person_cards_by_slugs(context_person_slugs)
+            regenerated_topic_cards = self.llm.derive_topic_cards(context_person_cards)
+        affected_topic_slug_set = set(affected_topic_slugs)
+        topic_cards = [
+            card
+            for card in regenerated_topic_cards
+            if str(card.get("slug", "")).strip() in affected_topic_slug_set
+        ]
+
+        if person_cards and topic_cards:
+            _apply_person_focus_areas(person_cards, topic_cards)
+
+        self.repo.upsert_person_cards(person_cards, replace_existing=False)
+        self.repo.upsert_topic_cards(topic_cards, replace_existing=False)
+        return SummaryStats(
+            paper_cards=len(paper_cards),
+            person_cards=len(person_cards),
+            topic_cards=len(topic_cards),
+        )
+
+    def _summarize_and_upsert_papers(self, *, force_all: bool) -> list[dict]:
         papers = self.repo.list_papers_for_summary(force_all)
         paper_cards: list[dict] = []
         for paper in papers:
@@ -99,22 +191,46 @@ class SummarizeService:
             card = self.llm.summarize_paper(paper.full_text, metadata)
             self.repo.upsert_paper_card(card)
             paper_cards.append(card)
+        return paper_cards
 
-        article_paper_cards = [
+    def _fetch_all_paper_cards(self) -> list[dict]:
+        papers = self.repo.list_papers_for_summary(True)
+        return self.repo.fetch_paper_cards_by_slugs([paper.slug for paper in papers])
+
+    def _fetch_all_person_cards(self) -> list[dict]:
+        papers = self.repo.list_papers_for_summary(True)
+        person_slugs = self.repo.list_person_slugs_linked_to_paper_slugs([paper.slug for paper in papers])
+        return self.repo.fetch_person_cards_by_slugs(person_slugs)
+
+    @staticmethod
+    def _article_cards(cards: list[dict]) -> list[dict]:
+        return [
             card
-            for card in paper_cards
+            for card in cards
             if str(card.get("paper_type", "")).strip().lower() == "article"
         ]
-        person_cards = self.llm.derive_person_cards(article_paper_cards)
-        topic_cards = self.llm.derive_topic_cards(person_cards)
 
-        _apply_person_focus_areas(person_cards, topic_cards)
+    @staticmethod
+    def _card_slugs(cards: list[dict]) -> list[str]:
+        slugs: list[str] = []
+        seen: set[str] = set()
+        for card in cards:
+            slug = str(card.get("slug", "")).strip()
+            if not slug or slug in seen:
+                continue
+            seen.add(slug)
+            slugs.append(slug)
+        return slugs
 
-        self.repo.upsert_person_cards(person_cards, replace_existing=force_all)
-        self.repo.upsert_topic_cards(topic_cards, replace_existing=force_all)
-
-        return SummaryStats(
-            paper_cards=len(paper_cards),
-            person_cards=len(person_cards),
-            topic_cards=len(topic_cards),
-        )
+    @staticmethod
+    def _merge_unique_slugs(*collections: list[str]) -> list[str]:
+        output: list[str] = []
+        seen: set[str] = set()
+        for values in collections:
+            for value in values:
+                normalized = str(value).strip()
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                output.append(normalized)
+        return output

@@ -522,6 +522,28 @@ def test_fetch_paper_cards_by_slugs_decodes_payloads() -> None:
     assert params == (["papers/a", "papers/b"],)
 
 
+def test_fetch_all_paper_cards_decodes_payloads() -> None:
+    connection = FakeConnection(
+        rows=(
+            ("papers/a", '{"summary":"Alpha"}'),
+            ("papers/b", {"summary": "Beta"}),
+        )
+    )
+    repo = PostgresRepo(connection)
+
+    cards = repo.fetch_all_paper_cards()
+
+    assert cards == [
+        {"summary": "Alpha", "slug": "papers/a", "type": "article"},
+        {"summary": "Beta", "slug": "papers/b", "type": "article"},
+    ]
+    sql, params = connection.executed[0]
+    assert "SELECT slug, body" in sql
+    assert "FROM paper_cards" in sql
+    assert "ORDER BY slug;" in sql
+    assert params is None
+
+
 def test_fetch_person_cards_by_slugs_decodes_payloads() -> None:
     connection = FakeConnection(
         rows=(
@@ -550,6 +572,15 @@ def test_fetch_paper_cards_by_slugs_enforces_canonical_slug_and_type() -> None:
     repo = PostgresRepo(connection)
 
     cards = repo.fetch_paper_cards_by_slugs(["papers/a"])
+
+    assert cards == [{"slug": "papers/a", "type": "article", "summary": "Alpha"}]
+
+
+def test_fetch_all_paper_cards_enforces_canonical_slug_and_type() -> None:
+    connection = FakeConnection(rows=(("papers/a", {"slug": "papers/wrong", "type": "paper", "summary": "Alpha"}),))
+    repo = PostgresRepo(connection)
+
+    cards = repo.fetch_all_paper_cards()
 
     assert cards == [{"slug": "papers/a", "type": "article", "summary": "Alpha"}]
 

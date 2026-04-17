@@ -324,6 +324,22 @@ class PostgresRepo:
             output.append(card)
         return output
 
+    def fetch_all_paper_cards(self) -> list[dict]:
+        rows = self.fetchall(
+            """
+            SELECT slug, body
+            FROM paper_cards
+            ORDER BY slug;
+            """.strip()
+        )
+        output: list[dict] = []
+        for slug, body in rows:
+            card = _decode_card_payload(body)
+            card["slug"] = str(slug)
+            card["type"] = "article"
+            output.append(card)
+        return output
+
     def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
         if not person_slugs:
             return []

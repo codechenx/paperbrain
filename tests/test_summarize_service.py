@@ -331,36 +331,18 @@ def test_summarize_card_scope_paper_rebuilds_papers_only() -> None:
 def test_summarize_card_scope_person_rebuilds_people_only_from_article_cards() -> None:
     class PersonOnlyRepo:
         def __init__(self) -> None:
-            self.force_all_seen: bool | None = None
-            self.paper_slugs_seen: list[str] | None = None
+            self.full_paper_fetch_called = False
+            self.paper_cards_fetch_count = 0
             self.person_cards: list[dict] = []
             self.replace_existing_flags: list[bool] = []
 
         def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
-            self.force_all_seen = force_all
-            return [
-                FakePaper(
-                    slug="papers/article-a",
-                    title="A",
-                    journal="J",
-                    year=2024,
-                    authors=["A"],
-                    corresponding_authors=["A <a@example.org>"],
-                    full_text="A",
-                ),
-                FakePaper(
-                    slug="papers/review-b",
-                    title="B",
-                    journal="J",
-                    year=2024,
-                    authors=["B"],
-                    corresponding_authors=["B <b@example.org>"],
-                    full_text="B",
-                ),
-            ]
+            _ = force_all
+            self.full_paper_fetch_called = True
+            raise AssertionError("full paper fetch path must not run for person scope")
 
-        def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
-            self.paper_slugs_seen = list(paper_slugs)
+        def fetch_all_paper_cards(self) -> list[dict]:
+            self.paper_cards_fetch_count += 1
             return [
                 {"slug": "papers/article-a", "type": "article", "paper_type": "article"},
                 {"slug": "papers/review-b", "type": "article", "paper_type": "review"},
@@ -405,8 +387,8 @@ def test_summarize_card_scope_person_rebuilds_people_only_from_article_cards() -
     llm = PersonOnlyLLM()
     result = SummarizeService(repo=repo, llm=llm).run(card_scope="person")
 
-    assert repo.force_all_seen is True
-    assert repo.paper_slugs_seen == ["papers/article-a", "papers/review-b"]
+    assert repo.full_paper_fetch_called is False
+    assert repo.paper_cards_fetch_count == 1
     assert [card["slug"] for card in llm.person_input or []] == ["papers/article-a"]
     assert repo.replace_existing_flags == [True]
     assert [card["slug"] for card in repo.person_cards] == ["people/a"]
@@ -419,13 +401,14 @@ def test_summarize_card_scope_person_skips_upsert_when_no_article_source_cards()
     class PersonScopeEmptySourceRepo:
         def __init__(self) -> None:
             self.upsert_calls = 0
+            self.full_paper_fetch_called = False
 
         def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
             _ = force_all
-            return [FakePaper("papers/review-a", "A", "J", 2024, ["A"], ["A <a@example.org>"], "A")]
+            self.full_paper_fetch_called = True
+            raise AssertionError("full paper fetch path must not run for person scope")
 
-        def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
-            _ = paper_slugs
+        def fetch_all_paper_cards(self) -> list[dict]:
             return [{"slug": "papers/review-a", "type": "article", "paper_type": "review"}]
 
         def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
@@ -448,6 +431,7 @@ def test_summarize_card_scope_person_skips_upsert_when_no_article_source_cards()
     repo = PersonScopeEmptySourceRepo()
     result = SummarizeService(repo=repo, llm=PersonScopeEmptySourceLLM()).run(card_scope="person")
 
+    assert repo.full_paper_fetch_called is False
     assert repo.upsert_calls == 0
     assert result.paper_cards == 0
     assert result.person_cards == 0

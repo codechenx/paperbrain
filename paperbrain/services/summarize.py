@@ -71,6 +71,9 @@ class SummaryRepository(Protocol):
     def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
         ...
 
+    def fetch_all_paper_cards(self) -> list[dict]:
+        ...
+
     def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
         ...
 
@@ -228,8 +231,7 @@ class SummarizeService:
         return paper_cards
 
     def _fetch_all_paper_cards(self) -> list[dict]:
-        papers = self.repo.list_papers_for_summary(True)
-        return self.repo.fetch_paper_cards_by_slugs([paper.slug for paper in papers])
+        return self.repo.fetch_all_paper_cards()
 
     def _fetch_all_person_cards(self) -> list[dict]:
         person_slugs = self.repo.list_all_person_slugs()

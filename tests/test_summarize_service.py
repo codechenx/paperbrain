@@ -513,14 +513,17 @@ def test_summarize_incremental_related_only_updates_affected_people_and_topics()
 
         def list_paper_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
             self.paper_slugs_for_people_seen = sorted(person_slugs)
-            return ["papers/context-article", "papers/new-article"]
+            # Simulate stale link tables before new links are written.
+            return ["papers/context-article"]
 
         def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
             self.fetch_paper_slugs_seen = sorted(paper_slugs)
-            return [
-                {"slug": "papers/context-article", "type": "article", "paper_type": "article"},
-                {"slug": "papers/new-article", "type": "article", "paper_type": "article"},
-            ]
+            by_slug = {
+                "papers/context-article": {"slug": "papers/context-article", "type": "article", "paper_type": "article"},
+                "papers/new-article": {"slug": "papers/new-article", "type": "article", "paper_type": "article"},
+                "papers/new-review": {"slug": "papers/new-review", "type": "article", "paper_type": "review"},
+            }
+            return [copy.deepcopy(by_slug[slug]) for slug in paper_slugs if slug in by_slug]
 
         def list_topic_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
             self.topic_slugs_for_people_seen = sorted(person_slugs)
@@ -572,7 +575,8 @@ def test_summarize_incremental_related_only_updates_affected_people_and_topics()
                         "related_papers": ["papers/new-article"],
                     }
                 ]
-            return [
+
+            cards = [
                 {
                     "slug": "people/context-only",
                     "type": "person",
@@ -583,12 +587,16 @@ def test_summarize_incremental_related_only_updates_affected_people_and_topics()
                     "type": "person",
                     "related_papers": ["papers/context-article"],
                 },
-                {
-                    "slug": "people/new-author",
-                    "type": "person",
-                    "related_papers": ["papers/new-article"],
-                },
             ]
+            if "papers/new-article" in slugs:
+                cards.append(
+                    {
+                        "slug": "people/new-author",
+                        "type": "person",
+                        "related_papers": ["papers/new-article"],
+                    }
+                )
+            return cards
 
         def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
             slugs = [card["slug"] for card in person_cards]
@@ -616,7 +624,7 @@ def test_summarize_incremental_related_only_updates_affected_people_and_topics()
     assert [card["slug"] for card in repo.paper_cards] == ["papers/new-article", "papers/new-review"]
     assert repo.person_slugs_from_new_papers_seen == ["papers/new-article", "papers/new-review"]
     assert repo.paper_slugs_for_people_seen == ["people/existing", "people/new-author"]
-    assert repo.fetch_paper_slugs_seen == ["papers/context-article", "papers/new-article"]
+    assert repo.fetch_paper_slugs_seen == ["papers/context-article", "papers/new-article", "papers/new-review"]
     assert repo.topic_slugs_for_people_seen == ["people/existing", "people/new-author"]
     assert repo.person_slugs_for_topics_seen == ["topics/existing-topic"]
     assert repo.fetch_person_slugs_seen == ["people/context-only", "people/existing", "people/new-author"]

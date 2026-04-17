@@ -138,14 +138,16 @@ class SummarizeService:
         paper_cards = self._summarize_and_upsert_papers(force_all=False)
         new_paper_slugs = self._card_slugs(paper_cards)
         derived_from_new_articles = self.llm.derive_person_cards(self._article_cards(paper_cards))
+        derived_person_slugs = self._card_slugs(derived_from_new_articles)
         affected_person_slugs = self._merge_unique_slugs(
             self.repo.list_person_slugs_linked_to_paper_slugs(new_paper_slugs),
-            self._card_slugs(derived_from_new_articles),
+            derived_person_slugs,
         )
 
         regenerated_person_cards: list[dict] = []
         if affected_person_slugs:
-            context_paper_slugs = self.repo.list_paper_slugs_linked_to_person_slugs(affected_person_slugs)
+            linked_context_paper_slugs = self.repo.list_paper_slugs_linked_to_person_slugs(affected_person_slugs)
+            context_paper_slugs = self._merge_unique_slugs(linked_context_paper_slugs, new_paper_slugs)
             context_paper_cards = self.repo.fetch_paper_cards_by_slugs(context_paper_slugs)
             regenerated_person_cards = self.llm.derive_person_cards(self._article_cards(context_paper_cards))
         affected_person_slug_set = set(affected_person_slugs)

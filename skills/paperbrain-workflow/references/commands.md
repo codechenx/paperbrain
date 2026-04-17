@@ -37,7 +37,7 @@ paperbrain stats --config-path "$CONFIG_PATH"
 paperbrain search "<title keyword>" --top-k 3 --include-cards --config-path "$CONFIG_PATH"
 ```
 
-Use `--force-all` only when you intentionally need full re-processing.
+Use `paperbrain ingest --force-all ...` only when you intentionally need full re-processing during ingest.
 
 ## Canonical summarize pattern
 

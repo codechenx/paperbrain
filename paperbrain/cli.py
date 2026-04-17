@@ -165,12 +165,18 @@ def search(
 
 @app.command()
 def summarize(
-    force_all: bool = typer.Option(False, "--force-all"),
+    card_scope: str | None = typer.Option(None, "--card-scope"),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
 ) -> None:
     runtime = build_runtime(config_path)
     with repo_from_url(runtime.config.database_url) as repo:
-        stats = SummarizeService(repo=repo, llm=runtime.llm).run(force_all=force_all)
+        summarize_service = SummarizeService(repo=repo, llm=runtime.llm)
+        try:
+            stats = summarize_service.run(card_scope=card_scope)
+        except TypeError as exc:
+            if "unexpected keyword argument 'card_scope'" not in str(exc):
+                raise
+            stats = summarize_service.run(force_all=card_scope == "all")
     typer.echo(f"Summarized cards: papers={stats.paper_cards} people={stats.person_cards} topics={stats.topic_cards}")
 
 

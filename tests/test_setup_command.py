@@ -1103,8 +1103,8 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
             calls["repo"] = repo
             calls["llm_seen"] = isinstance(llm, FakeSummaryAdapter)
 
-        def run(self, force_all: bool) -> SummaryStats:
-            calls["run_force_all"] = force_all
+        def run(self, card_scope: str | None) -> SummaryStats:
+            calls["run_card_scope"] = card_scope
             return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
 
     @contextmanager
@@ -1123,7 +1123,7 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
     monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
 
     runner = CliRunner()
-    result = runner.invoke(app, ["summarize", "--force-all", "--config-path", str(config_path)])
+    result = runner.invoke(app, ["summarize", "--config-path", str(config_path)])
 
     assert result.exit_code == 0
     assert "Summarized cards: papers=3 people=2 topics=1" in result.output
@@ -1134,7 +1134,7 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
     assert calls["connect"] == ("postgresql://localhost:5432/paperbrain", False)
     assert calls["repo"] is fake_repo
     assert calls["llm_seen"] is True
-    assert calls["run_force_all"] is True
+    assert calls["run_card_scope"] is None
 
 
 def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
@@ -1180,8 +1180,8 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
             calls["repo"] = repo
             calls["llm_seen"] = isinstance(llm, FakeGeminiSummaryAdapter)
 
-        def run(self, force_all: bool) -> SummaryStats:
-            calls["run_force_all"] = force_all
+        def run(self, card_scope: str | None) -> SummaryStats:
+            calls["run_card_scope"] = card_scope
             return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
 
     @contextmanager
@@ -1207,7 +1207,7 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
     monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
 
     runner = CliRunner()
-    result = runner.invoke(app, ["summarize", "--force-all", "--config-path", str(config_path)])
+    result = runner.invoke(app, ["summarize", "--card-scope", "all", "--config-path", str(config_path)])
 
     assert result.exit_code == 0
     assert "Summarized cards: papers=3 people=2 topics=1" in result.output
@@ -1221,7 +1221,7 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
     assert calls["connect"] == ("postgresql://localhost:5432/paperbrain", False)
     assert calls["repo"] is fake_repo
     assert calls["llm_seen"] is True
-    assert calls["run_force_all"] is True
+    assert calls["run_card_scope"] == "all"
 
 
 def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
@@ -1268,8 +1268,8 @@ def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
             calls["repo"] = repo
             calls["llm_seen"] = isinstance(llm, FakeOllamaSummaryAdapter)
 
-        def run(self, force_all: bool) -> SummaryStats:
-            calls["run_force_all"] = force_all
+        def run(self, card_scope: str | None) -> SummaryStats:
+            calls["run_card_scope"] = card_scope
             return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
 
     @contextmanager
@@ -1295,7 +1295,7 @@ def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
     monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
 
     runner = CliRunner()
-    result = runner.invoke(app, ["summarize", "--force-all", "--config-path", str(config_path)])
+    result = runner.invoke(app, ["summarize", "--card-scope", "all", "--config-path", str(config_path)])
 
     assert result.exit_code == 0
     assert "Summarized cards: papers=3 people=2 topics=1" in result.output
@@ -1309,7 +1309,7 @@ def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
     assert calls["connect"] == ("postgresql://localhost:5432/paperbrain", False)
     assert calls["repo"] is fake_repo
     assert calls["llm_seen"] is True
-    assert calls["run_force_all"] is True
+    assert calls["run_card_scope"] == "all"
 
 def test_runtime_prefixed_provider_positive_paths(monkeypatch: Any, tmp_path: Path) -> None:
     # openai positive path

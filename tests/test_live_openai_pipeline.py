@@ -102,7 +102,7 @@ def test_live_openai_postgres_pipeline(tmp_path: Path) -> None:
 
     summarize_result = runner.invoke(
         app,
-        ["summarize", "--force-all", "--config-path", str(config_path)],
+        ["summarize", "--card-scope", "all", "--config-path", str(config_path)],
         catch_exceptions=False,
     )
     assert summarize_result.exit_code == 0, summarize_result.output

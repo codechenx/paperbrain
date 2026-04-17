@@ -614,6 +614,12 @@ def test_summarize_incremental_related_only_updates_affected_people_and_topics()
                     "topic": "Existing Topic",
                     "related_people": ["people/existing", "people/new-author"],
                 },
+                {
+                    "slug": "topics/new-related-topic",
+                    "type": "topic",
+                    "topic": "New Related Topic",
+                    "related_people": ["people/new-author"],
+                },
             ]
 
     repo = IncrementalRepo()
@@ -636,12 +642,15 @@ def test_summarize_incremental_related_only_updates_affected_people_and_topics()
     assert repo.person_replace_existing_flags == [False]
     assert repo.topic_replace_existing_flags == [False]
     assert [card["slug"] for card in repo.person_cards] == ["people/existing", "people/new-author"]
-    assert [card["slug"] for card in repo.topic_cards] == ["topics/existing-topic"]
+    assert [card["slug"] for card in repo.topic_cards] == [
+        "topics/existing-topic",
+        "topics/new-related-topic",
+    ]
     assert repo.person_cards[0]["focus_area"] == ["Existing Topic"]
-    assert repo.person_cards[1]["focus_area"] == ["Existing Topic"]
+    assert repo.person_cards[1]["focus_area"] == ["Existing Topic", "New Related Topic"]
     assert result.paper_cards == 2
     assert result.person_cards == 2
-    assert result.topic_cards == 1
+    assert result.topic_cards == 2
 
 
 def test_summarize_incremental_topics_use_regenerated_person_cards_for_affected_people() -> None:
@@ -766,6 +775,113 @@ def test_summarize_incremental_topics_use_regenerated_person_cards_for_affected_
     }
     assert repo.person_cards[0]["focus_area"] == ["Existing Topic"]
     assert [card["slug"] for card in repo.topic_cards] == ["topics/existing-topic"]
+
+
+def test_summarize_incremental_derives_topics_when_affected_topic_slugs_empty() -> None:
+    class IncrementalNoTopicLinksRepo:
+        def __init__(self) -> None:
+            self.topic_lookup_person_slugs_seen: list[str] | None = None
+            self.topic_cards: list[dict] = []
+
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            _ = force_all
+            return [
+                FakePaper(
+                    slug="papers/new-article",
+                    title="New Article",
+                    journal="J",
+                    year=2024,
+                    authors=["A"],
+                    corresponding_authors=["A <a@example.org>"],
+                    full_text="A",
+                )
+            ]
+
+        def upsert_paper_card(self, card: dict) -> None:
+            _ = card
+
+        def list_person_slugs_linked_to_paper_slugs(self, paper_slugs: list[str]) -> list[str]:
+            _ = paper_slugs
+            return []
+
+        def list_paper_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+            _ = person_slugs
+            return []
+
+        def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
+            return [
+                {"slug": slug, "type": "article", "paper_type": "article"}
+                for slug in paper_slugs
+                if slug == "papers/new-article"
+            ]
+
+        def list_topic_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+            self.topic_lookup_person_slugs_seen = list(person_slugs)
+            return []
+
+        def list_person_slugs_linked_to_topic_slugs(self, topic_slugs: list[str]) -> list[str]:
+            _ = topic_slugs
+            raise AssertionError("topic-person backfill should not run without affected topic slugs")
+
+        def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
+            _ = person_slugs
+            raise AssertionError("person fetch by topic links should not run without affected topic slugs")
+
+        def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = cards, replace_existing
+
+        def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = replace_existing
+            self.topic_cards = copy.deepcopy(cards)
+
+    class IncrementalNoTopicLinksLLM:
+        def __init__(self) -> None:
+            self.topic_inputs: list[list[str]] = []
+
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            return {
+                "slug": metadata["slug"],
+                "type": "article",
+                "paper_type": "article",
+                "title": metadata["title"],
+            }
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            _ = paper_cards
+            return [
+                {
+                    "slug": "people/new-author",
+                    "type": "person",
+                    "related_papers": ["papers/new-article"],
+                }
+            ]
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            self.topic_inputs.append([card["slug"] for card in person_cards])
+            return [
+                {
+                    "slug": "topics/new-topic",
+                    "type": "topic",
+                    "topic": "New Topic",
+                    "related_people": ["people/new-author"],
+                },
+                {
+                    "slug": "topics/unrelated-topic",
+                    "type": "topic",
+                    "topic": "Unrelated Topic",
+                    "related_people": ["people/someone-else"],
+                },
+            ]
+
+    repo = IncrementalNoTopicLinksRepo()
+    llm = IncrementalNoTopicLinksLLM()
+    result = SummarizeService(repo=repo, llm=llm).run(card_scope=None)
+
+    assert repo.topic_lookup_person_slugs_seen == ["people/new-author"]
+    assert llm.topic_inputs == [["people/new-author"]]
+    assert [card["slug"] for card in repo.topic_cards] == ["topics/new-topic"]
+    assert result.topic_cards == 1
 
 
 def test_summarize_generates_person_topic_when_corresponding_authors_inferred() -> None:
@@ -1077,7 +1193,7 @@ def test_summarize_does_not_delete_existing_paper_links_when_cards_omit_paper_re
     assert "DELETE FROM paper_topic_links" not in executed_sql
     assert result.paper_cards == 1
     assert result.person_cards == 1
-    assert result.topic_cards == 0
+    assert result.topic_cards == 1
 
 
 def test_summarize_focus_area_from_generated_topics() -> None:

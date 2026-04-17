@@ -159,24 +159,37 @@ class SummarizeService:
 
         affected_topic_slugs = self.repo.list_topic_slugs_linked_to_person_slugs(affected_person_slugs)
         regenerated_topic_cards: list[dict] = []
+        affected_person_cards_by_slug = {
+            slug: card
+            for card in affected_person_cards
+            if (slug := str(card.get("slug", "")).strip())
+        }
+        topic_input_person_cards: list[dict] = []
         if affected_topic_slugs:
             context_person_slugs = self.repo.list_person_slugs_linked_to_topic_slugs(affected_topic_slugs)
             context_person_cards = self.repo.fetch_person_cards_by_slugs(context_person_slugs)
-            affected_person_cards_by_slug = {
-                slug: card
-                for card in affected_person_cards
-                if (slug := str(card.get("slug", "")).strip())
-            }
-            topic_input_person_cards = [
-                affected_person_cards_by_slug.get(str(card.get("slug", "")).strip(), card)
-                for card in context_person_cards
-            ]
+            seen_person_slugs: set[str] = set()
+            for card in context_person_cards:
+                slug = str(card.get("slug", "")).strip()
+                if not slug:
+                    continue
+                seen_person_slugs.add(slug)
+                topic_input_person_cards.append(affected_person_cards_by_slug.get(slug, card))
+            for slug, card in affected_person_cards_by_slug.items():
+                if slug not in seen_person_slugs:
+                    topic_input_person_cards.append(card)
+        elif affected_person_cards_by_slug:
+            topic_input_person_cards = list(affected_person_cards_by_slug.values())
+        if topic_input_person_cards:
             regenerated_topic_cards = self.llm.derive_topic_cards(topic_input_person_cards)
         affected_topic_slug_set = set(affected_topic_slugs)
         topic_cards = [
             card
             for card in regenerated_topic_cards
-            if str(card.get("slug", "")).strip() in affected_topic_slug_set
+            if (
+                str(card.get("slug", "")).strip() in affected_topic_slug_set
+                or bool(set(_as_string_list(card.get("related_people"))) & affected_person_slug_set)
+            )
         ]
 
         if affected_person_cards and topic_cards:

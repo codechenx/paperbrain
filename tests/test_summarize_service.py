@@ -230,6 +230,36 @@ def test_summarize_card_scope_all_maps_to_force_all() -> None:
     assert result.paper_cards == 2
 
 
+def test_summarize_all_raises_value_error_when_topics_empty_for_existing_people() -> None:
+    class AllScopeRepo(FakeRepo):
+        def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = replace_existing
+            self.person_cards = copy.deepcopy(cards)
+
+    class EmptyTopicsLLM(FakeLLM):
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            return [
+                {
+                    "slug": "people/alice-university-org",
+                    "type": "person",
+                    "related_papers": [paper_cards[0]["slug"]],
+                }
+            ]
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            _ = person_cards
+            return []
+
+    repo = AllScopeRepo()
+    llm = EmptyTopicsLLM()
+
+    with pytest.raises(ValueError, match=r"No linked topics found for person card"):
+        SummarizeService(repo=repo, llm=llm).run(card_scope="all")
+
+    assert repo.person_cards == []
+    assert repo.topic_cards == []
+
+
 def test_summarize_card_scope_paper_rebuilds_papers_only() -> None:
     class PaperOnlyRepo:
         def __init__(self) -> None:
@@ -882,6 +912,160 @@ def test_summarize_incremental_derives_topics_when_affected_topic_slugs_empty() 
     assert llm.topic_inputs == [["people/new-author"]]
     assert [card["slug"] for card in repo.topic_cards] == ["topics/new-topic"]
     assert result.topic_cards == 1
+
+
+def test_summarize_incremental_raises_value_error_when_topics_empty_for_affected_people() -> None:
+    class IncrementalNoTopicLinksRepo:
+        def __init__(self) -> None:
+            self.person_cards: list[dict] = []
+            self.topic_cards: list[dict] = []
+
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            _ = force_all
+            return [
+                FakePaper(
+                    slug="papers/new-article",
+                    title="New Article",
+                    journal="J",
+                    year=2024,
+                    authors=["A"],
+                    corresponding_authors=["A <a@example.org>"],
+                    full_text="A",
+                )
+            ]
+
+        def upsert_paper_card(self, card: dict) -> None:
+            _ = card
+
+        def list_person_slugs_linked_to_paper_slugs(self, paper_slugs: list[str]) -> list[str]:
+            _ = paper_slugs
+            return []
+
+        def list_paper_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+            _ = person_slugs
+            return []
+
+        def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
+            return [
+                {"slug": slug, "type": "article", "paper_type": "article"}
+                for slug in paper_slugs
+                if slug == "papers/new-article"
+            ]
+
+        def list_topic_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+            _ = person_slugs
+            return []
+
+        def list_person_slugs_linked_to_topic_slugs(self, topic_slugs: list[str]) -> list[str]:
+            _ = topic_slugs
+            raise AssertionError("topic-person backfill should not run without affected topic slugs")
+
+        def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
+            _ = person_slugs
+            raise AssertionError("person fetch by topic links should not run without affected topic slugs")
+
+        def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = replace_existing
+            self.person_cards = copy.deepcopy(cards)
+
+        def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = replace_existing
+            self.topic_cards = copy.deepcopy(cards)
+
+    class IncrementalNoTopicsLLM:
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            return {
+                "slug": metadata["slug"],
+                "type": "article",
+                "paper_type": "article",
+                "title": metadata["title"],
+            }
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            _ = paper_cards
+            return [
+                {
+                    "slug": "people/new-author",
+                    "type": "person",
+                    "related_papers": ["papers/new-article"],
+                }
+            ]
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            _ = person_cards
+            return []
+
+    repo = IncrementalNoTopicLinksRepo()
+    llm = IncrementalNoTopicsLLM()
+
+    with pytest.raises(ValueError, match=r"No linked topics found for person card"):
+        SummarizeService(repo=repo, llm=llm).run(card_scope=None)
+
+    assert repo.person_cards == []
+    assert repo.topic_cards == []
+
+
+def test_summarize_incremental_returns_noop_when_no_new_papers() -> None:
+    class NoNewPapersRepo:
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            _ = force_all
+            return []
+
+        def upsert_paper_card(self, card: dict) -> None:
+            _ = card
+            raise AssertionError("paper upsert should not run when no papers are returned")
+
+        def list_person_slugs_linked_to_paper_slugs(self, paper_slugs: list[str]) -> list[str]:
+            _ = paper_slugs
+            raise AssertionError("person lookup should not run when no new paper cards exist")
+
+        def list_paper_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+            _ = person_slugs
+            raise AssertionError("paper backfill should not run when no new paper cards exist")
+
+        def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
+            _ = paper_slugs
+            raise AssertionError("paper fetch should not run when no new paper cards exist")
+
+        def list_topic_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+            _ = person_slugs
+            raise AssertionError("topic lookup should not run when no new paper cards exist")
+
+        def list_person_slugs_linked_to_topic_slugs(self, topic_slugs: list[str]) -> list[str]:
+            _ = topic_slugs
+            raise AssertionError("person-topic backfill should not run when no new paper cards exist")
+
+        def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
+            _ = person_slugs
+            raise AssertionError("person fetch should not run when no new paper cards exist")
+
+        def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = cards, replace_existing
+            raise AssertionError("person upsert should not run when no new paper cards exist")
+
+        def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+            _ = cards, replace_existing
+            raise AssertionError("topic upsert should not run when no new paper cards exist")
+
+    class NoNewPapersLLM:
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text, metadata
+            raise AssertionError("paper summarization should not run when no papers are returned")
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            _ = paper_cards
+            raise AssertionError("person derivation should not run when no new paper cards exist")
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            _ = person_cards
+            raise AssertionError("topic derivation should not run when no new paper cards exist")
+
+    result = SummarizeService(repo=NoNewPapersRepo(), llm=NoNewPapersLLM()).run(card_scope=None)
+
+    assert result.paper_cards == 0
+    assert result.person_cards == 0
+    assert result.topic_cards == 0
 
 
 def test_summarize_generates_person_topic_when_corresponding_authors_inferred() -> None:

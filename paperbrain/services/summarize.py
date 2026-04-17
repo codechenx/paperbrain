@@ -125,7 +125,7 @@ class SummarizeService:
             paper_cards = self._summarize_and_upsert_papers(force_all=True)
             person_cards = self.llm.derive_person_cards(self._article_cards(paper_cards))
             topic_cards = self.llm.derive_topic_cards(person_cards)
-            if person_cards and topic_cards:
+            if person_cards:
                 _apply_person_focus_areas(person_cards, topic_cards)
             self.repo.upsert_person_cards(person_cards, replace_existing=True)
             self.repo.upsert_topic_cards(topic_cards, replace_existing=True)
@@ -136,6 +136,8 @@ class SummarizeService:
             )
 
         paper_cards = self._summarize_and_upsert_papers(force_all=False)
+        if not paper_cards:
+            return SummaryStats(paper_cards=0, person_cards=0, topic_cards=0)
         new_paper_slugs = self._card_slugs(paper_cards)
         derived_from_new_articles = self.llm.derive_person_cards(self._article_cards(paper_cards))
         derived_person_slugs = self._card_slugs(derived_from_new_articles)
@@ -192,7 +194,7 @@ class SummarizeService:
             )
         ]
 
-        if affected_person_cards and topic_cards:
+        if affected_person_cards:
             _apply_person_focus_areas(affected_person_cards, topic_cards)
 
         self.repo.upsert_person_cards(affected_person_cards, replace_existing=False)

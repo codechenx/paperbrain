@@ -252,6 +252,16 @@ class PostgresRepo:
         )
         return [str(person_slug) for person_slug, in rows]
 
+    def list_all_person_slugs(self) -> list[str]:
+        rows = self.fetchall(
+            """
+            SELECT slug
+            FROM person_cards
+            ORDER BY slug;
+            """.strip()
+        )
+        return [str(person_slug) for person_slug, in rows]
+
     def list_topic_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
         if not person_slugs:
             return []

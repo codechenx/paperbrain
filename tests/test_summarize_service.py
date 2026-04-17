@@ -388,31 +388,21 @@ def test_summarize_card_scope_person_rebuilds_people_only_from_article_cards() -
 def test_summarize_card_scope_topic_rebuilds_topics_only_from_all_person_cards() -> None:
     class TopicOnlyRepo:
         def __init__(self) -> None:
-            self.force_all_seen: bool | None = None
-            self.paper_slugs_seen: list[str] | None = None
+            self.list_all_person_slugs_called = False
+            self.fetch_person_slugs_seen: list[str] | None = None
             self.topic_cards: list[dict] = []
             self.replace_existing_flags: list[bool] = []
-            self.people_from_topics_seen: list[str] | None = None
 
-        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
-            self.force_all_seen = force_all
-            return [
-                FakePaper(
-                    slug="papers/article-a",
-                    title="A",
-                    journal="J",
-                    year=2024,
-                    authors=["A"],
-                    corresponding_authors=["A <a@example.org>"],
-                    full_text="A",
-                )
-            ]
-
-        def list_person_slugs_linked_to_paper_slugs(self, paper_slugs: list[str]) -> list[str]:
-            self.paper_slugs_seen = list(paper_slugs)
+        def list_all_person_slugs(self) -> list[str]:
+            self.list_all_person_slugs_called = True
             return ["people/a", "people/b"]
 
+        def list_person_slugs_linked_to_paper_slugs(self, paper_slugs: list[str]) -> list[str]:
+            _ = paper_slugs
+            raise AssertionError("topic scope must not load people from linked paper subsets")
+
         def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
+            self.fetch_person_slugs_seen = list(person_slugs)
             return [
                 {"slug": "people/a", "type": "person", "related_papers": ["papers/article-a"]},
                 {"slug": "people/b", "type": "person", "related_papers": ["papers/article-a"]},
@@ -457,14 +447,22 @@ def test_summarize_card_scope_topic_rebuilds_topics_only_from_all_person_cards()
     llm = TopicOnlyLLM()
     result = SummarizeService(repo=repo, llm=llm).run(card_scope="topic")
 
-    assert repo.force_all_seen is True
-    assert repo.paper_slugs_seen == ["papers/article-a"]
+    assert repo.list_all_person_slugs_called is True
+    assert repo.fetch_person_slugs_seen == ["people/a", "people/b"]
     assert [card["slug"] for card in llm.topic_input or []] == ["people/a", "people/b"]
     assert repo.replace_existing_flags == [True]
     assert [card["slug"] for card in repo.topic_cards] == ["topics/t1"]
     assert result.paper_cards == 0
     assert result.person_cards == 0
     assert result.topic_cards == 1
+
+
+def test_summarize_rejects_invalid_card_scope() -> None:
+    repo = FakeRepo()
+    llm = FakeLLM()
+
+    with pytest.raises(ValueError, match=r"Invalid card_scope"):
+        SummarizeService(repo=repo, llm=llm).run(card_scope="invalid")
 
 
 def test_summarize_incremental_related_only_updates_affected_people_and_topics() -> None:

@@ -440,6 +440,20 @@ def test_list_person_slugs_linked_to_paper_slugs() -> None:
     assert params == (["papers/a", "papers/b"],)
 
 
+def test_list_all_person_slugs() -> None:
+    connection = FakeConnection(rows=(("people/alice",), ("people/bob",)))
+    repo = PostgresRepo(connection)
+
+    slugs = repo.list_all_person_slugs()
+
+    assert slugs == ["people/alice", "people/bob"]
+    sql, params = connection.executed[0]
+    assert "SELECT slug" in sql
+    assert "FROM person_cards" in sql
+    assert "ORDER BY slug;" in sql
+    assert params is None
+
+
 def test_list_topic_slugs_linked_to_person_slugs() -> None:
     connection = FakeConnection(rows=(("topics/genomics",), ("topics/immunology",)))
     repo = PostgresRepo(connection)

@@ -9,8 +9,8 @@ from paperbrain.adapters.docling import DoclingParser
 from paperbrain.models import ParsedPaper
 
 
-def _worker_main(connection: Connection) -> None:
-    parser = DoclingParser()
+def _worker_main(connection: Connection, ocr_enabled: bool) -> None:
+    parser = DoclingParser(ocr_enabled=ocr_enabled)
     converter = parser.create_converter()
     try:
         while True:
@@ -32,11 +32,11 @@ def _worker_main(connection: Connection) -> None:
 
 
 class DoclingParseWorker:
-    def __init__(self) -> None:
+    def __init__(self, *, ocr_enabled: bool = False) -> None:
         context = get_context("spawn")
         parent_connection, child_connection = context.Pipe()
         self._connection = parent_connection
-        self._process = context.Process(target=_worker_main, args=(child_connection,))
+        self._process = context.Process(target=_worker_main, args=(child_connection, ocr_enabled))
         self._process.start()
         child_connection.close()
 

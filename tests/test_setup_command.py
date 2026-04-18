@@ -1119,7 +1119,8 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
             calls["embedding_client_seen"] = isinstance(client, FakeOpenAIClient)
 
     class FakeParser:
-        pass
+        def __init__(self, *, ocr_enabled: bool = False) -> None:
+            _ = ocr_enabled
 
     class FakeIngestService:
         def __init__(
@@ -1205,7 +1206,6 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
 
 def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: Any, tmp_path: Path) -> None:
     from paperbrain.adapters.docling import DoclingParser
-    from paperbrain.adapters.docling_worker import DoclingParseWorker
 
     calls: dict[str, Any] = {}
     config = AppConfig(
@@ -1214,6 +1214,7 @@ def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: An
         summary_model="openai:gpt-4.1-mini",
         embedding_model="text-embedding-3-small",
         embeddings_enabled=True,
+        docling_ocr_enabled=True,
     )
     config_path = tmp_path / "config" / "paperbrain.conf"
     pdf_path = tmp_path / "sample.pdf"
@@ -1236,6 +1237,10 @@ def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: An
 
     class FakeDoclingParser(DoclingParser):
         pass
+
+    class FakeDoclingParseWorker:
+        def __init__(self, *, ocr_enabled: bool = False) -> None:
+            self.ocr_enabled = ocr_enabled
 
     class FakeIngestService:
         def __init__(
@@ -1272,6 +1277,7 @@ def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: An
     monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
     monkeypatch.setattr("paperbrain.summary_provider.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
     monkeypatch.setattr("paperbrain.summary_provider.DoclingParser", FakeDoclingParser)
+    monkeypatch.setattr("paperbrain.cli.DoclingParseWorker", FakeDoclingParseWorker)
     monkeypatch.setattr("paperbrain.cli.IngestService", FakeIngestService)
     monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
     monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: connection)
@@ -1280,7 +1286,9 @@ def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: An
     result = runner.invoke(app, ["ingest", str(pdf_path), "--config-path", str(config_path)])
 
     assert result.exit_code == 0
-    assert calls["parse_worker_factory"] is DoclingParseWorker
+    worker = calls["parse_worker_factory"]()
+    assert isinstance(worker, FakeDoclingParseWorker)
+    assert worker.ocr_enabled is True
 
 
 def test_cli_search_uses_runtime_config_and_outputs_results(monkeypatch: Any, tmp_path: Path) -> None:

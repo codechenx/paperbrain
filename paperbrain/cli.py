@@ -138,7 +138,9 @@ def ingest(
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
 ) -> None:
     runtime = build_runtime(config_path)
-    parse_worker_factory = DoclingParseWorker if isinstance(runtime.parser, DoclingParser) else None
+    parse_worker_factory = None
+    if isinstance(runtime.parser, DoclingParser):
+        parse_worker_factory = lambda: DoclingParseWorker(ocr_enabled=runtime.parser.ocr_enabled)
     with repo_from_url(runtime.config.database_url) as repo:
         inserted = IngestService(
             repo=repo,

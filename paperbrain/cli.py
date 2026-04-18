@@ -75,6 +75,10 @@ def setup(
         False,
         "--embeddings-enabled/--no-embeddings-enabled",
     ),
+    docling_ocr_enabled: bool = typer.Option(
+        False,
+        "--docling-ocr-enabled/--no-docling-ocr-enabled",
+    ),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
     test_connections: bool = typer.Option(
         True,
@@ -107,6 +111,7 @@ def setup(
         summary_model=summary_model,
         embedding_model=embedding_model,
         embeddings_enabled=embeddings_enabled,
+        docling_ocr_enabled=docling_ocr_enabled,
         config_path=config_path,
         test_connections=test_connections,
     )

@@ -41,6 +41,7 @@ def test_run_setup_writes_project_config(tmp_path: Path) -> None:
     assert loaded.summary_model == "openai:gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
     assert loaded.embeddings_enabled is False
+    assert loaded.docling_ocr_enabled is False
     assert message == f"Saved configuration to {config_path}"
 
 
@@ -353,6 +354,33 @@ def test_cli_setup_accepts_embeddings_enabled_flag(monkeypatch: Any) -> None:
 
     assert result.exit_code == 0
     assert calls["embeddings_enabled"] is True
+
+
+def test_cli_setup_accepts_docling_ocr_enabled_flag(monkeypatch: Any) -> None:
+    calls: dict[str, Any] = {}
+
+    def fake_run_setup(**kwargs: Any) -> str:
+        calls.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr("paperbrain.cli.run_setup", fake_run_setup)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "setup",
+            "--url",
+            "postgresql://localhost:5432/paperbrain",
+            "--openai-api-key",
+            "sk-test",
+            "--summary-model",
+            "openai:gpt-4.1-mini",
+            "--docling-ocr-enabled",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls["docling_ocr_enabled"] is True
 
 
 def test_cli_setup_reads_openai_key_from_env(monkeypatch: Any) -> None:

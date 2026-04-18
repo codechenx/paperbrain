@@ -7,7 +7,8 @@ class DummyConfig:
     def __init__(self):
         self.summary_model = "openai:gpt-3.5-turbo"
         self.openai_api_key = "sk-test"
-        self.embedding_model = "text-embedding-ada-002"
+        self.embedding_model = "text-embedding-3-small"
+        self.embeddings_enabled = True
         self.gemini_api_key = ""
         self.ollama_api_key = ""
         self.ollama_base_url = ""

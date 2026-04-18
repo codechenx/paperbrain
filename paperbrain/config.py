@@ -4,6 +4,7 @@ import tomllib
 
 DEFAULT_SUMMARY_MODEL = "openai:gpt-4.1-mini"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+DEFAULT_EMBEDDINGS_ENABLED = False
 SUPPORTED_1536D_EMBEDDING_MODELS = {DEFAULT_EMBEDDING_MODEL}
 
 
@@ -13,6 +14,7 @@ class AppConfig:
     openai_api_key: str
     summary_model: str
     embedding_model: str
+    embeddings_enabled: bool = DEFAULT_EMBEDDINGS_ENABLED
     gemini_api_key: str = ""
     ollama_api_key: str = ""
     ollama_base_url: str = "https://ollama.com"
@@ -48,9 +50,11 @@ class ConfigStore:
         ollama_base_url: str = "https://ollama.com",
         summary_model: str = DEFAULT_SUMMARY_MODEL,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
+        embeddings_enabled: bool = DEFAULT_EMBEDDINGS_ENABLED,
     ) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        validate_embedding_model_for_schema(embedding_model)
+        if embeddings_enabled:
+            validate_embedding_model_for_schema(embedding_model)
         normalized_ollama_base_url = normalize_ollama_base_url(ollama_base_url)
         body = (
             "[paperbrain]\n"
@@ -61,6 +65,7 @@ class ConfigStore:
             'ollama_base_url = "{ollama_base_url}"\n'
             'summary_model = "{summary_model}"\n'
             'embedding_model = "{embedding_model}"\n'
+            "embeddings_enabled = {embeddings_enabled}\n"
         ).format(
             database_url=database_url.replace("\\", "\\\\").replace('"', '\\"'),
             openai_api_key=openai_api_key.replace("\\", "\\\\").replace('"', '\\"'),
@@ -69,6 +74,7 @@ class ConfigStore:
             ollama_base_url=normalized_ollama_base_url.replace("\\", "\\\\").replace('"', '\\"'),
             summary_model=summary_model.replace("\\", "\\\\").replace('"', '\\"'),
             embedding_model=embedding_model.replace("\\", "\\\\").replace('"', '\\"'),
+            embeddings_enabled=str(embeddings_enabled).lower(),
         )
         self.path.write_text(body, encoding="utf-8")
         self.path.chmod(0o600)
@@ -102,12 +108,17 @@ class ConfigStore:
         embedding_model = section.get("embedding_model", DEFAULT_EMBEDDING_MODEL)
         if not isinstance(embedding_model, str):
             raise ValueError("Invalid embedding_model in configuration file")
-        validate_embedding_model_for_schema(embedding_model)
+        embeddings_enabled = section.get("embeddings_enabled", DEFAULT_EMBEDDINGS_ENABLED)
+        if not isinstance(embeddings_enabled, bool):
+            raise ValueError("Invalid embeddings_enabled in configuration file")
+        if embeddings_enabled:
+            validate_embedding_model_for_schema(embedding_model)
         return AppConfig(
             database_url=database_url,
             openai_api_key=openai_api_key,
             summary_model=summary_model,
             embedding_model=embedding_model,
+            embeddings_enabled=embeddings_enabled,
             gemini_api_key=gemini_api_key,
             ollama_api_key=ollama_api_key,
             ollama_base_url=normalized_ollama_base_url,

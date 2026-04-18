@@ -255,6 +255,13 @@ paperbrain setup \
   --summary-model gemini:gemini-2.5-flash \
   --embeddings-enabled \
   --embedding-model text-embedding-3-small
+
+# Optional: enable Docling OCR during parsing (default is off)
+paperbrain setup \
+  --url postgresql://<user>:<pass>@localhost:5432/paperbrain \
+  --gemini-api-key $GEMINI_API_KEY \
+  --summary-model gemini:gemini-2.5-flash \
+  --docling-ocr-enabled
 ```
 
 Default config path is:
@@ -272,6 +279,7 @@ ollama_base_url = "https://ollama.com"
 summary_model = "openai:gpt-4.1-mini"
 embedding_model = "text-embedding-3-small"
 embeddings_enabled = false
+docling_ocr_enabled = false
 ```
 
 Summary provider is selected from explicit summary model prefixes:
@@ -288,6 +296,11 @@ Embedding behavior:
 - When disabled, ingest stores papers/chunks but skips vector generation
 - Search automatically falls back to keyword-only ranking
 - Enable embeddings with `--embeddings-enabled` for hybrid keyword + vector search
+
+Docling OCR behavior:
+
+- Default is `docling_ocr_enabled = false`
+- Enable OCR with `--docling-ocr-enabled` for scanned/image-only PDFs
 
 ### Initialize schema
 
@@ -307,7 +320,7 @@ paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --for
 
 | Command | Purpose | Key options |
 |---|---|---|
-| `paperbrain setup` | Save config and validate connections | `--url`, `--openai-api-key`, `--gemini-api-key`, `--ollama-api-key`, `--ollama-base-url`, `--summary-model`, `--embedding-model`, `--embeddings-enabled/--no-embeddings-enabled`, `--config-path`, `--test-connections/--no-test-connections` |
+| `paperbrain setup` | Save config and validate connections | `--url`, `--openai-api-key`, `--gemini-api-key`, `--ollama-api-key`, `--ollama-base-url`, `--summary-model`, `--embedding-model`, `--embeddings-enabled/--no-embeddings-enabled`, `--docling-ocr-enabled/--no-docling-ocr-enabled`, `--config-path`, `--test-connections/--no-test-connections` |
 | `paperbrain init` | Apply DB schema | `--url`, `--force` |
 | `paperbrain ingest PATH` | Parse PDFs and store chunks (embeddings optional) | `--recursive`, `--force-all`, `--start-offset`, `--max-files`, `--parse-worker-recycle-every`, `--config-path` |
 | `paperbrain browse KEYWORD` | Keyword browse card bodies | `--type [paper\|person\|topic\|all]`, `--config-path` |

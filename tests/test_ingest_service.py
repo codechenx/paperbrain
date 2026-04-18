@@ -83,7 +83,7 @@ class FakeRepo:
 
     def replace_chunks(self, paper_id: str, chunks: list[str], vectors: list[list[float]]) -> None:
         assert paper_id == "paper-1"
-        assert len(chunks) == len(vectors)
+        assert not vectors or len(chunks) == len(vectors)
         self.replacements.append((paper_id, chunks, vectors))
 
 
@@ -126,6 +126,21 @@ def test_ingest_service_skips_existing_even_when_source_path_differs(tmp_path: P
     assert inserted2 == 0
     assert len(repo.upserts) == 1
     assert len(repo.replacements) == 1
+
+
+def test_ingest_service_ingests_without_embeddings(tmp_path: Path) -> None:
+    repo = FakeRepo()
+    parser = FakeParser()
+    service = IngestService(repo=repo, parser=parser, embeddings=None, chunk_size_words=3)
+
+    paper_file = tmp_path / "a.pdf"
+    paper_file.write_text("fake", encoding="utf-8")
+
+    inserted = service.ingest_paths([str(paper_file)], force_all=False)
+
+    assert inserted == 1
+    assert repo.upserts == [(str(paper_file), False)]
+    assert repo.replacements == [("paper-1", ["one two three", "four five six"], [])]
 
 
 def test_docling_parser_raises_for_missing_file(tmp_path: Path) -> None:

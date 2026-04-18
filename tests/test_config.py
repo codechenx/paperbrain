@@ -15,6 +15,7 @@ def test_save_and_load_config_round_trip(tmp_path: Path) -> None:
     assert loaded.database_url == "postgresql://localhost:5432/paperbrain"
     assert loaded.summary_model == "openai:gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
+    assert loaded.embeddings_enabled is False
 
 
 def test_config_stores_openai_and_gemini_fields(tmp_path: Path) -> None:
@@ -35,6 +36,7 @@ def test_config_stores_openai_and_gemini_fields(tmp_path: Path) -> None:
     assert loaded.gemini_api_key == "gm-test"
     assert loaded.summary_model == "openai:gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
+    assert loaded.embeddings_enabled is False
 
 
 def test_config_stores_ollama_fields(tmp_path: Path) -> None:
@@ -104,6 +106,7 @@ def test_load_legacy_config_uses_model_defaults(tmp_path: Path) -> None:
     assert loaded.ollama_base_url == "https://ollama.com"
     assert loaded.summary_model == "openai:gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
+    assert loaded.embeddings_enabled is False
 
 
 def test_load_rejects_non_string_openai_api_key(tmp_path: Path) -> None:
@@ -121,22 +124,38 @@ def test_load_rejects_non_string_openai_api_key(tmp_path: Path) -> None:
         ConfigStore(config_path).load()
 
 
-def test_save_rejects_incompatible_embedding_model(tmp_path: Path) -> None:
+def test_save_allows_incompatible_embedding_model_when_embeddings_disabled(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+
+    ConfigStore(config_path).save(
+        database_url="postgresql://localhost:5432/paperbrain",
+        embedding_model="text-embedding-3-large",
+        embeddings_enabled=False,
+    )
+
+    loaded = ConfigStore(config_path).load()
+    assert loaded.embedding_model == "text-embedding-3-large"
+    assert loaded.embeddings_enabled is False
+
+
+def test_save_rejects_incompatible_embedding_model_when_embeddings_enabled(tmp_path: Path) -> None:
     config_path = tmp_path / "paperbrain.conf"
 
     with pytest.raises(ValueError, match="text-embedding-3-small"):
         ConfigStore(config_path).save(
             database_url="postgresql://localhost:5432/paperbrain",
             embedding_model="text-embedding-3-large",
+            embeddings_enabled=True,
         )
 
 
-def test_load_rejects_incompatible_embedding_model(tmp_path: Path) -> None:
+def test_load_rejects_incompatible_embedding_model_when_embeddings_enabled(tmp_path: Path) -> None:
     config_path = tmp_path / "paperbrain.conf"
     config_path.write_text(
         (
             "[paperbrain]\n"
             'database_url = "postgresql://localhost:5432/paperbrain"\n'
+            "embeddings_enabled = true\n"
             'embedding_model = "text-embedding-3-large"\n'
         ),
         encoding="utf-8",
@@ -162,6 +181,7 @@ def test_save_sets_restrictive_permissions(tmp_path: Path) -> None:
     [
         ("summary_model", "123", "Invalid summary_model in configuration file"),
         ("embedding_model", "456", "Invalid embedding_model in configuration file"),
+        ("embeddings_enabled", '"yes"', "Invalid embeddings_enabled in configuration file"),
         ("ollama_api_key", "789", "Invalid ollama_api_key in configuration file"),
         ("ollama_base_url", "789", "Invalid ollama_base_url in configuration file"),
     ],

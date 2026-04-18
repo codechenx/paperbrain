@@ -35,7 +35,7 @@ class IngestService:
         *,
         repo: IngestRepository,
         parser: Parser,
-        embeddings: Embeddings,
+        embeddings: Embeddings | None,
         chunk_size_words: int = 200,
     ) -> None:
         self.repo = repo
@@ -51,9 +51,11 @@ class IngestService:
             if not force_all and self.repo.has_paper(parsed):
                 continue
             chunks = chunk_words(parsed.full_text, self.chunk_size_words)
-            vectors = self.embeddings.embed(chunks)
-            if len(chunks) != len(vectors):
-                raise ValueError("Embedding count must match chunk count")
+            vectors: list[list[float]] = []
+            if self.embeddings is not None:
+                vectors = self.embeddings.embed(chunks)
+                if len(chunks) != len(vectors):
+                    raise ValueError("Embedding count must match chunk count")
             paper_id = self.repo.upsert_paper(parsed, force=force_all)
             self.repo.replace_chunks(paper_id, chunks, vectors)
             inserted += 1

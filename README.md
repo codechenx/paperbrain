@@ -131,23 +131,80 @@ Topic card (topics/<normalized-theme>)
 
 ## 3. Installation
 
-### Requirements
-- Python **3.12+**
-- PostgreSQL (with `pgvector` extension available)
-- OpenAI API key
+### System Requirements
 
-### Install package
+- **Python**: 3.12 or later
+- **PostgreSQL**: 13+ with `pgvector` extension support
+- **System packages** (Ubuntu/Debian):
+  ```bash
+  sudo apt-get install postgresql-client libpq-dev
+  ```
+  (macOS with Homebrew):
+  ```bash
+  brew install libpq
+  ```
+
+### API Keys (at least one required)
+
+- **OpenAI**: Required for embeddings (used by all pipelines). Get from https://platform.openai.com/api-keys
+- **Summary provider** (choose one):
+  - **OpenAI**: For GPT-4 mini summaries
+  - **Google Gemini**: For Gemini 2.5 flash summaries
+  - **Ollama**: For local/self-hosted LLM summaries
+
+### Install PaperBrain
+
+**From repository (recommended for development):**
 
 ```bash
-cd /path/to/paperbrain
+git clone https://github.com/yourusername/paperbrain.git
+cd paperbrain
 python3 -m pip install -e .
 ```
 
-### Prepare database
+This installs PaperBrain in editable mode with all core dependencies:
+- `typer` — CLI framework
+- `psycopg[binary]` — PostgreSQL driver
+- `openai` — OpenAI API client (embeddings + summaries)
+- `google-genai` — Google Gemini API client
+- `ollama` — Ollama API client
+- `docling` — PDF parsing and OCR
+- `fastapi` + `uvicorn` — Internal web service (if needed)
 
-1. Create a PostgreSQL database (example name: `paperbrain`)
-2. Ensure extension can be created:
-   - `CREATE EXTENSION IF NOT EXISTS vector;`
+**Via pip (released versions only):**
+
+```bash
+python3 -m pip install paperbrain
+```
+
+### Optional: Install with development tools
+
+For development, testing, and linting:
+
+```bash
+cd paperbrain
+python3 -m pip install -e ".[dev]"
+```
+
+(Note: Development dependencies are optional; install `pytest` manually if needed for testing.)
+
+### Prepare PostgreSQL Database
+
+1. Create a PostgreSQL database (example name: `paperbrain`):
+   ```bash
+   createdb paperbrain
+   ```
+
+2. Enable the `pgvector` extension (required for embeddings):
+   ```bash
+   psql paperbrain -c "CREATE EXTENSION IF NOT EXISTS vector;"
+   ```
+
+3. Note your connection string for setup:
+   ```
+   postgresql://<user>:<password>@<host>:<port>/<dbname>
+   # Example: postgresql://user:pass@localhost:5432/paperbrain
+   ```
 
 ---
 

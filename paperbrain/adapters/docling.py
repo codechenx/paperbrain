@@ -102,6 +102,14 @@ class DoclingParser:
             return converter_type()
         raise TypeError("DocumentConverter constructor does not accept format_options")
 
+    @staticmethod
+    def _raise_ocr_unavailable(reason: str) -> None:
+        raise RuntimeError(
+            "OCR cannot be enabled with the current docling installation "
+            f"({reason}). Install a docling version with OCR support/dependencies "
+            "or set ocr_enabled=False."
+        )
+
     def create_converter(self) -> object:
         try:
             document_converter_module = import_module("docling.document_converter")
@@ -119,10 +127,19 @@ class DoclingParser:
         pdf_format_option_type = getattr(document_converter_module, "PdfFormatOption", None)
         pipeline_options_module = self._import_optional_module("docling.datamodel.pipeline_options")
         if pdf_format_option_type is None or pipeline_options_module is None:
+            if self.ocr_enabled:
+                missing = []
+                if pdf_format_option_type is None:
+                    missing.append("docling.document_converter.PdfFormatOption is missing")
+                if pipeline_options_module is None:
+                    missing.append("docling.datamodel.pipeline_options is unavailable")
+                self._raise_ocr_unavailable("; ".join(missing))
             return DocumentConverter()
 
         PdfPipelineOptions = getattr(pipeline_options_module, "PdfPipelineOptions", None)
         if PdfPipelineOptions is None:
+            if self.ocr_enabled:
+                self._raise_ocr_unavailable("docling.datamodel.pipeline_options.PdfPipelineOptions is missing")
             return DocumentConverter()
 
         pipeline_options = PdfPipelineOptions()

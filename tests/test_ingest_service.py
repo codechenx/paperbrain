@@ -458,7 +458,7 @@ def test_docling_parser_create_converter_propagates_converter_type_errors(
     assert called_without_format_options is False
 
 
-def test_docling_parser_create_converter_falls_back_when_ocr_classes_missing(
+def test_docling_parser_create_converter_falls_back_when_ocr_classes_missing_in_non_ocr_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -474,10 +474,52 @@ def test_docling_parser_create_converter_falls_back_when_ocr_classes_missing(
     monkeypatch.setitem(sys.modules, "docling", docling_module)
     monkeypatch.setitem(sys.modules, "docling.document_converter", document_converter_module)
 
-    converter = DoclingParser(ocr_enabled=True).create_converter()
+    converter = DoclingParser(ocr_enabled=False).create_converter()
 
     assert isinstance(converter, FakeConverter)
     assert captured["format_options"] is None
+
+
+def test_docling_parser_create_converter_raises_when_ocr_classes_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeConverter:
+        def __init__(self, *, format_options: object | None = None) -> None:
+            _ = format_options
+
+    docling_module = types.ModuleType("docling")
+    document_converter_module = types.ModuleType("docling.document_converter")
+    document_converter_module.DocumentConverter = FakeConverter
+
+    monkeypatch.setitem(sys.modules, "docling", docling_module)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", document_converter_module)
+
+    with pytest.raises(RuntimeError, match="OCR cannot be enabled"):
+        DoclingParser(ocr_enabled=True).create_converter()
+
+
+def test_docling_parser_create_converter_raises_when_ocr_pipeline_module_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakePdfFormatOption:
+        def __init__(self, *, pipeline_options: object) -> None:
+            _ = pipeline_options
+
+    class FakeConverter:
+        def __init__(self, *, format_options: object | None = None) -> None:
+            _ = format_options
+
+    docling_module = types.ModuleType("docling")
+    document_converter_module = types.ModuleType("docling.document_converter")
+    document_converter_module.DocumentConverter = FakeConverter
+    document_converter_module.PdfFormatOption = FakePdfFormatOption
+
+    monkeypatch.setitem(sys.modules, "docling", docling_module)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", document_converter_module)
+    monkeypatch.setitem(sys.modules, "docling.datamodel", types.ModuleType("docling.datamodel"))
+
+    with pytest.raises(RuntimeError, match="OCR cannot be enabled"):
+        DoclingParser(ocr_enabled=True).create_converter()
 
 
 def test_docling_parser_create_converter_propagates_pipeline_import_errors(

@@ -91,7 +91,11 @@ class DoclingParser:
 
     @classmethod
     def _build_document_converter(
-        cls, converter_type: object, format_options: dict[object, object]
+        cls,
+        converter_type: object,
+        format_options: dict[object, object],
+        *,
+        require_format_options: bool,
     ) -> object:
         signature = cls._get_callable_signature(converter_type)
         if signature is None or cls._supports_keyword_argument(signature, "format_options"):
@@ -99,7 +103,11 @@ class DoclingParser:
         if cls._supports_named_positional_argument(signature, "format_options"):
             return converter_type(format_options)
         if cls._can_call_without_arguments(signature):
+            if require_format_options:
+                raise RuntimeError("DocumentConverter constructor does not accept format_options")
             return converter_type()
+        if require_format_options:
+            raise RuntimeError("DocumentConverter constructor does not accept format_options")
         raise TypeError("DocumentConverter constructor does not accept format_options")
 
     @staticmethod
@@ -125,7 +133,12 @@ class DoclingParser:
             )
 
         pdf_format_option_type = getattr(document_converter_module, "PdfFormatOption", None)
-        pipeline_options_module = self._import_optional_module("docling.datamodel.pipeline_options")
+        try:
+            pipeline_options_module = self._import_optional_module("docling.datamodel.pipeline_options")
+        except ImportError:
+            if self.ocr_enabled:
+                raise
+            return DocumentConverter()
         if pdf_format_option_type is None or pipeline_options_module is None:
             if self.ocr_enabled:
                 missing = []
@@ -148,14 +161,28 @@ class DoclingParser:
         pdf_option = self._build_pdf_format_option(pdf_format_option_type, pipeline_options)
 
         format_options: dict[object, object] = {"pdf": pdf_option}
-        base_models_module = self._import_optional_module("docling.datamodel.base_models")
+        try:
+            base_models_module = self._import_optional_module("docling.datamodel.base_models")
+        except ImportError:
+            if self.ocr_enabled:
+                raise
+            return DocumentConverter()
         if base_models_module is not None:
             input_format_type = getattr(base_models_module, "InputFormat", None)
             input_format_pdf = getattr(input_format_type, "PDF", None)
             if input_format_pdf is not None:
                 format_options = {input_format_pdf: pdf_option}
 
-        return self._build_document_converter(DocumentConverter, format_options)
+        try:
+            return self._build_document_converter(
+                DocumentConverter,
+                format_options,
+                require_format_options=self.ocr_enabled,
+            )
+        except RuntimeError as exc:
+            if self.ocr_enabled and "does not accept format_options" in str(exc):
+                self._raise_ocr_unavailable("docling.document_converter.DocumentConverter lacks format_options support")
+            raise
 
     @staticmethod
     def _strip_image_payloads(markdown_content: str) -> str:

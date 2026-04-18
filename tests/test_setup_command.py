@@ -1094,13 +1094,37 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
         pass
 
     class FakeIngestService:
-        def __init__(self, *, repo: Any, parser: Any, embeddings: Any) -> None:
+        def __init__(
+            self,
+            *,
+            repo: Any,
+            parser: Any,
+            embeddings: Any,
+            parse_worker_factory: Any = None,
+        ) -> None:
             calls["repo"] = repo
             calls["parser_seen"] = isinstance(parser, FakeParser)
             calls["embeddings_seen"] = isinstance(embeddings, FakeEmbeddingAdapter)
+            calls["parse_worker_factory"] = parse_worker_factory
 
-        def ingest_paths(self, paths: list[str], force_all: bool, recursive: bool = False) -> int:
-            calls["ingest_args"] = (paths, force_all, recursive)
+        def ingest_paths(
+            self,
+            paths: list[str],
+            force_all: bool,
+            recursive: bool = False,
+            *,
+            start_offset: int = 0,
+            max_files: int | None = None,
+            parse_worker_recycle_every: int = 25,
+        ) -> int:
+            calls["ingest_args"] = (
+                paths,
+                force_all,
+                recursive,
+                start_offset,
+                max_files,
+                parse_worker_recycle_every,
+            )
             return 2
 
     @contextmanager
@@ -1122,7 +1146,19 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
     runner = CliRunner()
     result = runner.invoke(
         app,
-        ["ingest", str(pdf_path), "--recursive", "--config-path", str(config_path)],
+        [
+            "ingest",
+            str(pdf_path),
+            "--recursive",
+            "--start-offset",
+            "3",
+            "--max-files",
+            "10",
+            "--parse-worker-recycle-every",
+            "7",
+            "--config-path",
+            str(config_path),
+        ],
     )
 
     assert result.exit_code == 0
@@ -1135,7 +1171,88 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
     assert calls["repo"] is fake_repo
     assert calls["parser_seen"] is True
     assert calls["embeddings_seen"] is True
-    assert calls["ingest_args"] == ([str(pdf_path)], False, True)
+    assert calls["parse_worker_factory"] is None
+    assert calls["ingest_args"] == ([str(pdf_path)], False, True, 3, 10, 7)
+
+
+def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: Any, tmp_path: Path) -> None:
+    from paperbrain.adapters.docling import DoclingParser
+    from paperbrain.adapters.docling_worker import DoclingParseWorker
+
+    calls: dict[str, Any] = {}
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        summary_model="openai:gpt-4.1-mini",
+        embedding_model="text-embedding-3-small",
+        embeddings_enabled=True,
+    )
+    config_path = tmp_path / "config" / "paperbrain.conf"
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            calls["config_path"] = path
+
+        def load(self) -> AppConfig:
+            return config
+
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            _ = api_key
+
+    class FakeEmbeddingAdapter:
+        def __init__(self, *, client: Any, model: str) -> None:
+            _ = (client, model)
+
+    class FakeDoclingParser(DoclingParser):
+        pass
+
+    class FakeIngestService:
+        def __init__(
+            self,
+            *,
+            repo: Any,
+            parser: Any,
+            embeddings: Any,
+            parse_worker_factory: Any = None,
+        ) -> None:
+            _ = (repo, parser, embeddings)
+            calls["parse_worker_factory"] = parse_worker_factory
+
+        def ingest_paths(
+            self,
+            paths: list[str],
+            force_all: bool,
+            recursive: bool = False,
+            *,
+            start_offset: int = 0,
+            max_files: int | None = None,
+            parse_worker_recycle_every: int = 25,
+        ) -> int:
+            _ = (paths, force_all, recursive, start_offset, max_files, parse_worker_recycle_every)
+            return 1
+
+    @contextmanager
+    def fake_connect(database_url: str, *, autocommit: bool = False) -> Iterator[str]:
+        _ = (database_url, autocommit)
+        yield "fake-connection"
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
+    monkeypatch.setattr("paperbrain.summary_provider.DoclingParser", FakeDoclingParser)
+    monkeypatch.setattr("paperbrain.cli.IngestService", FakeIngestService)
+    monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
+    monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: connection)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["ingest", str(pdf_path), "--config-path", str(config_path)])
+
+    assert result.exit_code == 0
+    assert calls["parse_worker_factory"] is DoclingParseWorker
 
 
 def test_cli_search_uses_runtime_config_and_outputs_results(monkeypatch: Any, tmp_path: Path) -> None:

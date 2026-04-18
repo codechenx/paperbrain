@@ -13,6 +13,7 @@ except ModuleNotFoundError:  # pragma: no cover - env guard
     uvicorn = None  # type: ignore[assignment]
 
 from paperbrain.adapters.docling import DoclingParser
+from paperbrain.adapters.docling_worker import DoclingParseWorker
 from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
 from paperbrain.adapters.gemini_client import GeminiClient
 from paperbrain.adapters.llm import GeminiSummaryAdapter, LLMAdapter, OllamaSummaryAdapter, OpenAISummaryAdapter
@@ -126,12 +127,26 @@ def ingest(
     path: Path = typer.Argument(..., exists=True),
     force_all: bool = typer.Option(False, "--force-all"),
     recursive: bool = typer.Option(False, "--recursive"),
+    start_offset: int = typer.Option(0, "--start-offset", min=0),
+    max_files: int | None = typer.Option(None, "--max-files", min=0),
+    parse_worker_recycle_every: int = typer.Option(25, "--parse-worker-recycle-every", min=1),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
 ) -> None:
     runtime = build_runtime(config_path)
+    parse_worker_factory = DoclingParseWorker if isinstance(runtime.parser, DoclingParser) else None
     with repo_from_url(runtime.config.database_url) as repo:
-        inserted = IngestService(repo=repo, parser=runtime.parser, embeddings=runtime.embeddings).ingest_paths(
-            [str(path)], force_all=force_all, recursive=recursive
+        inserted = IngestService(
+            repo=repo,
+            parser=runtime.parser,
+            embeddings=runtime.embeddings,
+            parse_worker_factory=parse_worker_factory,
+        ).ingest_paths(
+            [str(path)],
+            force_all=force_all,
+            recursive=recursive,
+            start_offset=start_offset,
+            max_files=max_files,
+            parse_worker_recycle_every=parse_worker_recycle_every,
         )
     typer.echo(f"Ingested {inserted} paper(s).")
 

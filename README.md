@@ -36,6 +36,8 @@ PaperBrain focuses on a **question-centric workflow**:
 │ Local PDFs (single file/dir) │
 └──────────────┬───────────────┘
                │ paperbrain ingest [--recursive] [--force-all]
+               │                  [--start-offset N] [--max-files N]
+               │                  [--parse-worker-recycle-every N]
                ▼
       ┌─────────────────────────────┐
       │ DoclingParser                │
@@ -307,7 +309,7 @@ paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --for
 |---|---|---|
 | `paperbrain setup` | Save config and validate connections | `--url`, `--openai-api-key`, `--gemini-api-key`, `--ollama-api-key`, `--ollama-base-url`, `--summary-model`, `--embedding-model`, `--embeddings-enabled/--no-embeddings-enabled`, `--config-path`, `--test-connections/--no-test-connections` |
 | `paperbrain init` | Apply DB schema | `--url`, `--force` |
-| `paperbrain ingest PATH` | Parse PDFs and store chunks (embeddings optional) | `--recursive`, `--force-all`, `--config-path` |
+| `paperbrain ingest PATH` | Parse PDFs and store chunks (embeddings optional) | `--recursive`, `--force-all`, `--start-offset`, `--max-files`, `--parse-worker-recycle-every`, `--config-path` |
 | `paperbrain browse KEYWORD` | Keyword browse card bodies | `--type [paper\|person\|topic\|all]`, `--config-path` |
 | `paperbrain search QUERY` | Hybrid search when enabled, keyword-only otherwise | `--top-k`, `--include-cards`, `--config-path` |
 | `paperbrain summarize` | Build/update paper/person/topic cards | `--card-scope [all\|paper\|person\|topic]`, `--config-path` |
@@ -359,6 +361,18 @@ paperbrain summarize --card-scope all
 paperbrain summarize --card-scope paper
 paperbrain summarize --card-scope person
 paperbrain summarize --card-scope topic
+```
+
+### Large-corpus ingest (1000+ PDFs)
+
+Use bounded ingest windows and parser worker recycling to keep memory stable:
+
+```bash
+# Process 200 files at a time, starting from offset 0
+paperbrain ingest /path/to/pdfs --recursive --start-offset 0 --max-files 200 --parse-worker-recycle-every 25
+
+# Resume next window
+paperbrain ingest /path/to/pdfs --recursive --start-offset 200 --max-files 200 --parse-worker-recycle-every 25
 ```
 
 ### Expected export layout

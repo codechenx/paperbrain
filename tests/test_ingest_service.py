@@ -87,6 +87,18 @@ class FakeRepo:
         self.replacements.append((paper_id, chunks, vectors))
 
 
+class FakeParseWorker:
+    def __init__(self, parser: FakeParser, close_calls: list[str]) -> None:
+        self._parser = parser
+        self._close_calls = close_calls
+
+    def parse(self, path: Path) -> FakeParsedPaper:
+        return self._parser.parse_pdf(path)
+
+    def close(self) -> None:
+        self._close_calls.append("closed")
+
+
 def test_ingest_service_skips_existing_without_force(tmp_path: Path) -> None:
     repo = FakeRepo()
     parser = FakeParser()
@@ -141,6 +153,149 @@ def test_ingest_service_ingests_without_embeddings(tmp_path: Path) -> None:
     assert inserted == 1
     assert repo.upserts == [(str(paper_file), False)]
     assert repo.replacements == [("paper-1", ["one two three", "four five six"], [])]
+
+
+def test_ingest_service_applies_start_offset_and_max_files(tmp_path: Path) -> None:
+    repo = FakeRepo()
+
+    class UniqueParser(FakeParser):
+        def parse_pdf(self, path: Path) -> FakeParsedPaper:
+            parsed = super().parse_pdf(path)
+            return FakeParsedPaper(
+                title=parsed.title,
+                journal=parsed.journal,
+                year=parsed.year,
+                authors=parsed.authors,
+                corresponding_authors=parsed.corresponding_authors,
+                full_text=f"{parsed.full_text} {path.stem}",
+                source_path=parsed.source_path,
+            )
+
+    parser = UniqueParser()
+    embeddings = FakeEmbeddings()
+    service = IngestService(repo=repo, parser=parser, embeddings=embeddings, chunk_size_words=3)
+
+    paths: list[str] = []
+    for name in ["a.pdf", "b.pdf", "c.pdf", "d.pdf"]:
+        pdf_path = tmp_path / name
+        pdf_path.write_text("fake", encoding="utf-8")
+        paths.append(str(pdf_path))
+
+    inserted = service.ingest_paths(
+        paths,
+        force_all=False,
+        start_offset=1,
+        max_files=2,
+        parse_worker_recycle_every=25,
+    )
+
+    assert inserted == 2
+    assert [path.name for path in parser.calls] == ["b.pdf", "c.pdf"]
+
+
+def test_ingest_service_recycles_parse_worker_after_threshold(tmp_path: Path) -> None:
+    repo = FakeRepo()
+
+    class UniqueParser(FakeParser):
+        def parse_pdf(self, path: Path) -> FakeParsedPaper:
+            parsed = super().parse_pdf(path)
+            return FakeParsedPaper(
+                title=parsed.title,
+                journal=parsed.journal,
+                year=parsed.year,
+                authors=parsed.authors,
+                corresponding_authors=parsed.corresponding_authors,
+                full_text=f"{parsed.full_text} {path.stem}",
+                source_path=parsed.source_path,
+            )
+
+    parser = UniqueParser()
+    embeddings = FakeEmbeddings()
+    close_calls: list[str] = []
+
+    paths: list[str] = []
+    for name in ["a.pdf", "b.pdf", "c.pdf"]:
+        pdf_path = tmp_path / name
+        pdf_path.write_text("fake", encoding="utf-8")
+        paths.append(str(pdf_path))
+
+    service = IngestService(
+        repo=repo,
+        parser=parser,
+        embeddings=embeddings,
+        chunk_size_words=3,
+        parse_worker_factory=lambda: FakeParseWorker(parser, close_calls),
+    )
+
+    inserted = service.ingest_paths(paths, force_all=False, parse_worker_recycle_every=2)
+
+    assert inserted == 3
+    assert close_calls.count("closed") >= 2
+
+
+def test_ingest_service_surfaces_worker_failure_with_file_context(tmp_path: Path) -> None:
+    repo = FakeRepo()
+    parser = FakeParser()
+    embeddings = FakeEmbeddings()
+    pdf_path = tmp_path / "a.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+
+    class BrokenWorker:
+        def parse(self, path: Path) -> FakeParsedPaper:
+            _ = path
+            raise RuntimeError("worker crashed")
+
+        def close(self) -> None:
+            return None
+
+    service = IngestService(
+        repo=repo,
+        parser=parser,
+        embeddings=embeddings,
+        chunk_size_words=3,
+        parse_worker_factory=lambda: BrokenWorker(),
+    )
+
+    with pytest.raises(RuntimeError, match="worker crashed"):
+        service.ingest_paths([str(pdf_path)], force_all=False, parse_worker_recycle_every=25)
+
+
+def test_ingest_service_rejects_invalid_batch_arguments(tmp_path: Path) -> None:
+    repo = FakeRepo()
+    parser = FakeParser()
+    embeddings = FakeEmbeddings()
+    service = IngestService(repo=repo, parser=parser, embeddings=embeddings, chunk_size_words=3)
+
+    pdf_path = tmp_path / "a.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="start_offset"):
+        service.ingest_paths([str(pdf_path)], force_all=False, start_offset=-1)
+    with pytest.raises(ValueError, match="max_files"):
+        service.ingest_paths([str(pdf_path)], force_all=False, max_files=-1)
+    with pytest.raises(ValueError, match="parse_worker_recycle_every"):
+        service.ingest_paths([str(pdf_path)], force_all=False, parse_worker_recycle_every=0)
+
+
+def test_ingest_service_batches_embedding_requests(tmp_path: Path) -> None:
+    repo = FakeRepo()
+    parser = FakeParser()
+    embeddings = FakeEmbeddings()
+    service = IngestService(
+        repo=repo,
+        parser=parser,
+        embeddings=embeddings,
+        chunk_size_words=1,
+        embedding_batch_size=2,
+    )
+
+    pdf_path = tmp_path / "a.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+
+    inserted = service.ingest_paths([str(pdf_path)], force_all=False)
+
+    assert inserted == 1
+    assert embeddings.calls == [["one", "two"], ["three", "four"], ["five", "six"]]
 
 
 def test_docling_parser_raises_for_missing_file(tmp_path: Path) -> None:

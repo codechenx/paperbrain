@@ -12,6 +12,16 @@ class DoclingAdapter(Protocol):
 
 class DoclingParser:
     @staticmethod
+    def create_converter() -> object:
+        try:
+            from docling.document_converter import DocumentConverter
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "docling is required for PDF parsing. Install it with `pip install docling`."
+            ) from exc
+        return DocumentConverter()
+
+    @staticmethod
     def _strip_image_payloads(markdown_content: str) -> str:
         cleaned = markdown_content.replace("\r\n", "\n").replace("\r", "\n")
         cleaned = re.sub(r"!\[[^\]]*]\([^)]+\)", "", cleaned)
@@ -130,14 +140,12 @@ class DoclingParser:
     def parse_pdf(self, path: Path) -> ParsedPaper:
         if not path.exists():
             raise FileNotFoundError(f"PDF file not found: {path}")
-        try:
-            from docling.document_converter import DocumentConverter
-        except ModuleNotFoundError as exc:
-            raise RuntimeError(
-                "docling is required for PDF parsing. Install it with `pip install docling`."
-            ) from exc
+        converter = self.create_converter()
+        return self.parse_pdf_with_converter(path, converter)
 
-        converter = DocumentConverter()
+    def parse_pdf_with_converter(self, path: Path, converter: object) -> ParsedPaper:
+        if not path.exists():
+            raise FileNotFoundError(f"PDF file not found: {path}")
         result = converter.convert(str(path))
         document = getattr(result, "document", None)
         if document is not None and hasattr(document, "export_to_markdown"):

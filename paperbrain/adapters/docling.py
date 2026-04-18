@@ -1,3 +1,4 @@
+import inspect
 from pathlib import Path
 import re
 from typing import Protocol
@@ -13,6 +14,71 @@ class DoclingAdapter(Protocol):
 class DoclingParser:
     def __init__(self, *, ocr_enabled: bool = False) -> None:
         self.ocr_enabled = ocr_enabled
+
+    @staticmethod
+    def _get_callable_signature(callable_obj: object) -> inspect.Signature | None:
+        try:
+            return inspect.signature(callable_obj)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _supports_keyword_argument(signature: inspect.Signature, argument_name: str) -> bool:
+        for parameter in signature.parameters.values():
+            if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+                return True
+            if parameter.name == argument_name and parameter.kind in (
+                inspect.Parameter.KEYWORD_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _supports_named_positional_argument(signature: inspect.Signature, argument_name: str) -> bool:
+        for parameter in signature.parameters.values():
+            if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
+                return True
+            if parameter.kind in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            ):
+                if parameter.name == argument_name:
+                    return True
+        return False
+
+    @staticmethod
+    def _can_call_without_arguments(signature: inspect.Signature) -> bool:
+        for parameter in signature.parameters.values():
+            if parameter.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                continue
+            if parameter.default is inspect.Parameter.empty:
+                return False
+        return True
+
+    @classmethod
+    def _build_pdf_format_option(
+        cls, pdf_format_option_type: object, pipeline_options: object
+    ) -> object:
+        signature = cls._get_callable_signature(pdf_format_option_type)
+        if signature is None or cls._supports_keyword_argument(signature, "pipeline_options"):
+            return pdf_format_option_type(pipeline_options=pipeline_options)
+        if cls._supports_named_positional_argument(signature, "pipeline_options"):
+            return pdf_format_option_type(pipeline_options)
+        raise TypeError("PdfFormatOption constructor does not accept pipeline_options")
+
+    @classmethod
+    def _build_document_converter(
+        cls, converter_type: object, format_options: dict[object, object]
+    ) -> object:
+        signature = cls._get_callable_signature(converter_type)
+        if signature is None or cls._supports_keyword_argument(signature, "format_options"):
+            return converter_type(format_options=format_options)
+        if cls._supports_named_positional_argument(signature, "format_options"):
+            return converter_type(format_options)
+        if cls._can_call_without_arguments(signature):
+            return converter_type()
+        raise TypeError("DocumentConverter constructor does not accept format_options")
 
     def create_converter(self) -> object:
         try:
@@ -30,10 +96,7 @@ class DoclingParser:
         pipeline_options = PdfPipelineOptions()
         setattr(pipeline_options, "do_ocr", self.ocr_enabled)
 
-        try:
-            pdf_option = PdfFormatOption(pipeline_options=pipeline_options)
-        except TypeError:
-            pdf_option = PdfFormatOption(pipeline_options)
+        pdf_option = self._build_pdf_format_option(PdfFormatOption, pipeline_options)
 
         format_options: dict[object, object] = {"pdf": pdf_option}
         try:
@@ -45,15 +108,7 @@ class DoclingParser:
             if input_format_pdf is not None:
                 format_options = {input_format_pdf: pdf_option}
 
-        try:
-            return DocumentConverter(format_options=format_options)
-        except TypeError:
-            if format_options != {"pdf": pdf_option}:
-                try:
-                    return DocumentConverter(format_options={"pdf": pdf_option})
-                except TypeError:
-                    pass
-            return DocumentConverter()
+        return self._build_document_converter(DocumentConverter, format_options)
 
     @staticmethod
     def _strip_image_payloads(markdown_content: str) -> str:

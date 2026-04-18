@@ -11,15 +11,49 @@ class DoclingAdapter(Protocol):
 
 
 class DoclingParser:
-    @staticmethod
-    def create_converter() -> object:
+    def __init__(self, *, ocr_enabled: bool = False) -> None:
+        self.ocr_enabled = ocr_enabled
+
+    def create_converter(self) -> object:
         try:
             from docling.document_converter import DocumentConverter
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "docling is required for PDF parsing. Install it with `pip install docling`."
             ) from exc
-        return DocumentConverter()
+        try:
+            from docling.document_converter import PdfFormatOption
+            from docling.datamodel.pipeline_options import PdfPipelineOptions
+        except (ImportError, ModuleNotFoundError):
+            return DocumentConverter()
+
+        pipeline_options = PdfPipelineOptions()
+        setattr(pipeline_options, "do_ocr", self.ocr_enabled)
+
+        try:
+            pdf_option = PdfFormatOption(pipeline_options=pipeline_options)
+        except TypeError:
+            pdf_option = PdfFormatOption(pipeline_options)
+
+        format_options: dict[object, object] = {"pdf": pdf_option}
+        try:
+            from docling.datamodel.base_models import InputFormat
+        except (ImportError, ModuleNotFoundError):
+            pass
+        else:
+            input_format_pdf = getattr(InputFormat, "PDF", None)
+            if input_format_pdf is not None:
+                format_options = {input_format_pdf: pdf_option}
+
+        try:
+            return DocumentConverter(format_options=format_options)
+        except TypeError:
+            if format_options != {"pdf": pdf_option}:
+                try:
+                    return DocumentConverter(format_options={"pdf": pdf_option})
+                except TypeError:
+                    pass
+            return DocumentConverter()
 
     @staticmethod
     def _strip_image_payloads(markdown_content: str) -> str:

@@ -38,7 +38,7 @@ class SummaryProvider:
         self.parsed = parse_summary_model(self.summary_model)
         self.openai_client = self._build_openai_client()
         self.llm = self._build_llm()
-        self.parser = DoclingParser()
+        self.parser = DoclingParser(ocr_enabled=self.config.docling_ocr_enabled)
         self.embeddings = self._build_embeddings()
 
     def _build_openai_client(self) -> OpenAIClient | None:

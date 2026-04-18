@@ -306,6 +306,50 @@ def test_docling_parser_raises_for_missing_file(tmp_path: Path) -> None:
         parser.parse_pdf(missing_pdf)
 
 
+@pytest.mark.parametrize("ocr_enabled", [False, True])
+def test_docling_parser_create_converter_respects_ocr_toggle(
+    monkeypatch: pytest.MonkeyPatch, ocr_enabled: bool
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakePipelineOptions:
+        def __init__(self) -> None:
+            self.do_ocr = None
+
+    class FakePdfFormatOption:
+        def __init__(self, *, pipeline_options: FakePipelineOptions) -> None:
+            captured["do_ocr"] = pipeline_options.do_ocr
+            self.pipeline_options = pipeline_options
+
+    class FakeConverter:
+        def __init__(self, *, format_options: object | None = None) -> None:
+            captured["format_options"] = format_options
+
+    class FakeInputFormat:
+        PDF = "pdf-input-format"
+
+    docling_module = types.ModuleType("docling")
+    document_converter_module = types.ModuleType("docling.document_converter")
+    document_converter_module.DocumentConverter = FakeConverter
+    document_converter_module.PdfFormatOption = FakePdfFormatOption
+    pipeline_options_module = types.ModuleType("docling.datamodel.pipeline_options")
+    pipeline_options_module.PdfPipelineOptions = FakePipelineOptions
+    base_models_module = types.ModuleType("docling.datamodel.base_models")
+    base_models_module.InputFormat = FakeInputFormat
+
+    monkeypatch.setitem(sys.modules, "docling", docling_module)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", document_converter_module)
+    monkeypatch.setitem(sys.modules, "docling.datamodel", types.ModuleType("docling.datamodel"))
+    monkeypatch.setitem(sys.modules, "docling.datamodel.pipeline_options", pipeline_options_module)
+    monkeypatch.setitem(sys.modules, "docling.datamodel.base_models", base_models_module)
+
+    converter = DoclingParser(ocr_enabled=ocr_enabled).create_converter()
+
+    assert isinstance(converter, FakeConverter)
+    assert captured["do_ocr"] is ocr_enabled
+    assert captured["format_options"] is not None
+
+
 def test_docling_parser_extracts_structured_metadata_when_available(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

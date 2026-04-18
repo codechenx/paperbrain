@@ -5,6 +5,7 @@ import tomllib
 DEFAULT_SUMMARY_MODEL = "openai:gpt-4.1-mini"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 DEFAULT_EMBEDDINGS_ENABLED = False
+DEFAULT_DOCLING_OCR_ENABLED = False
 SUPPORTED_1536D_EMBEDDING_MODELS = {DEFAULT_EMBEDDING_MODEL}
 
 
@@ -15,6 +16,7 @@ class AppConfig:
     summary_model: str
     embedding_model: str
     embeddings_enabled: bool = DEFAULT_EMBEDDINGS_ENABLED
+    docling_ocr_enabled: bool = DEFAULT_DOCLING_OCR_ENABLED
     gemini_api_key: str = ""
     ollama_api_key: str = ""
     ollama_base_url: str = "https://ollama.com"
@@ -51,6 +53,7 @@ class ConfigStore:
         summary_model: str = DEFAULT_SUMMARY_MODEL,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
         embeddings_enabled: bool = DEFAULT_EMBEDDINGS_ENABLED,
+        docling_ocr_enabled: bool = DEFAULT_DOCLING_OCR_ENABLED,
     ) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if embeddings_enabled:
@@ -66,6 +69,7 @@ class ConfigStore:
             'summary_model = "{summary_model}"\n'
             'embedding_model = "{embedding_model}"\n'
             "embeddings_enabled = {embeddings_enabled}\n"
+            "docling_ocr_enabled = {docling_ocr_enabled}\n"
         ).format(
             database_url=database_url.replace("\\", "\\\\").replace('"', '\\"'),
             openai_api_key=openai_api_key.replace("\\", "\\\\").replace('"', '\\"'),
@@ -75,6 +79,7 @@ class ConfigStore:
             summary_model=summary_model.replace("\\", "\\\\").replace('"', '\\"'),
             embedding_model=embedding_model.replace("\\", "\\\\").replace('"', '\\"'),
             embeddings_enabled=str(embeddings_enabled).lower(),
+            docling_ocr_enabled=str(docling_ocr_enabled).lower(),
         )
         self.path.write_text(body, encoding="utf-8")
         self.path.chmod(0o600)
@@ -108,9 +113,16 @@ class ConfigStore:
         embedding_model = section.get("embedding_model", DEFAULT_EMBEDDING_MODEL)
         if not isinstance(embedding_model, str):
             raise ValueError("Invalid embedding_model in configuration file")
-        embeddings_enabled = section.get("embeddings_enabled", DEFAULT_EMBEDDINGS_ENABLED)
+        if "embeddings_enabled" not in section:
+            raise ValueError("Missing embeddings_enabled in configuration file")
+        embeddings_enabled = section["embeddings_enabled"]
         if not isinstance(embeddings_enabled, bool):
             raise ValueError("Invalid embeddings_enabled in configuration file")
+        if "docling_ocr_enabled" not in section:
+            raise ValueError("Missing docling_ocr_enabled in configuration file")
+        docling_ocr_enabled = section["docling_ocr_enabled"]
+        if not isinstance(docling_ocr_enabled, bool):
+            raise ValueError("Invalid docling_ocr_enabled in configuration file")
         if embeddings_enabled:
             validate_embedding_model_for_schema(embedding_model)
         return AppConfig(
@@ -119,6 +131,7 @@ class ConfigStore:
             summary_model=summary_model,
             embedding_model=embedding_model,
             embeddings_enabled=embeddings_enabled,
+            docling_ocr_enabled=docling_ocr_enabled,
             gemini_api_key=gemini_api_key,
             ollama_api_key=ollama_api_key,
             ollama_base_url=normalized_ollama_base_url,

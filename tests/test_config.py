@@ -16,6 +16,7 @@ def test_save_and_load_config_round_trip(tmp_path: Path) -> None:
     assert loaded.summary_model == "openai:gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
     assert loaded.embeddings_enabled is False
+    assert loaded.docling_ocr_enabled is False
 
 
 def test_config_stores_openai_and_gemini_fields(tmp_path: Path) -> None:
@@ -37,6 +38,7 @@ def test_config_stores_openai_and_gemini_fields(tmp_path: Path) -> None:
     assert loaded.summary_model == "openai:gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
     assert loaded.embeddings_enabled is False
+    assert loaded.docling_ocr_enabled is False
 
 
 def test_config_stores_ollama_fields(tmp_path: Path) -> None:
@@ -84,6 +86,8 @@ def test_load_rejects_blank_ollama_base_url(tmp_path: Path) -> None:
         (
             "[paperbrain]\n"
             'database_url = "postgresql://localhost:5432/paperbrain"\n'
+            "embeddings_enabled = false\n"
+            "docling_ocr_enabled = false\n"
             'ollama_base_url = "   "\n'
         ),
         encoding="utf-8",
@@ -93,10 +97,15 @@ def test_load_rejects_blank_ollama_base_url(tmp_path: Path) -> None:
         ConfigStore(config_path).load()
 
 
-def test_load_legacy_config_uses_model_defaults(tmp_path: Path) -> None:
+def test_load_config_uses_model_defaults_for_optional_fields(tmp_path: Path) -> None:
     config_path = tmp_path / "paperbrain.conf"
     config_path.write_text(
-        '[paperbrain]\ndatabase_url = "postgresql://localhost:5432/paperbrain"\n',
+        (
+            "[paperbrain]\n"
+            'database_url = "postgresql://localhost:5432/paperbrain"\n'
+            "embeddings_enabled = false\n"
+            "docling_ocr_enabled = false\n"
+        ),
         encoding="utf-8",
     )
     loaded = ConfigStore(config_path).load()
@@ -107,6 +116,37 @@ def test_load_legacy_config_uses_model_defaults(tmp_path: Path) -> None:
     assert loaded.summary_model == "openai:gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
     assert loaded.embeddings_enabled is False
+    assert loaded.docling_ocr_enabled is False
+
+
+def test_load_rejects_missing_embeddings_enabled_key(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+    config_path.write_text(
+        (
+            "[paperbrain]\n"
+            'database_url = "postgresql://localhost:5432/paperbrain"\n'
+            "docling_ocr_enabled = false\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="embeddings_enabled"):
+        ConfigStore(config_path).load()
+
+
+def test_load_rejects_missing_docling_ocr_enabled_key(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+    config_path.write_text(
+        (
+            "[paperbrain]\n"
+            'database_url = "postgresql://localhost:5432/paperbrain"\n'
+            "embeddings_enabled = false\n"
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="docling_ocr_enabled"):
+        ConfigStore(config_path).load()
 
 
 def test_load_rejects_non_string_openai_api_key(tmp_path: Path) -> None:
@@ -115,6 +155,8 @@ def test_load_rejects_non_string_openai_api_key(tmp_path: Path) -> None:
         (
             "[paperbrain]\n"
             'database_url = "postgresql://localhost:5432/paperbrain"\n'
+            "embeddings_enabled = false\n"
+            "docling_ocr_enabled = false\n"
             "openai_api_key = 123\n"
         ),
         encoding="utf-8",
@@ -156,6 +198,7 @@ def test_load_rejects_incompatible_embedding_model_when_embeddings_enabled(tmp_p
             "[paperbrain]\n"
             'database_url = "postgresql://localhost:5432/paperbrain"\n'
             "embeddings_enabled = true\n"
+            "docling_ocr_enabled = false\n"
             'embedding_model = "text-embedding-3-large"\n'
         ),
         encoding="utf-8",
@@ -182,6 +225,7 @@ def test_save_sets_restrictive_permissions(tmp_path: Path) -> None:
         ("summary_model", "123", "Invalid summary_model in configuration file"),
         ("embedding_model", "456", "Invalid embedding_model in configuration file"),
         ("embeddings_enabled", '"yes"', "Invalid embeddings_enabled in configuration file"),
+        ("docling_ocr_enabled", '"yes"', "Invalid docling_ocr_enabled in configuration file"),
         ("ollama_api_key", "789", "Invalid ollama_api_key in configuration file"),
         ("ollama_base_url", "789", "Invalid ollama_base_url in configuration file"),
     ],
@@ -190,10 +234,16 @@ def test_load_rejects_non_string_model_values(
     tmp_path: Path, field: str, value: str, message: str
 ) -> None:
     config_path = tmp_path / "paperbrain.conf"
+    required_flags = []
+    if field != "embeddings_enabled":
+        required_flags.append("embeddings_enabled = false\n")
+    if field != "docling_ocr_enabled":
+        required_flags.append("docling_ocr_enabled = false\n")
     config_path.write_text(
         (
             "[paperbrain]\n"
             'database_url = "postgresql://localhost:5432/paperbrain"\n'
+            f"{''.join(required_flags)}"
             f"{field} = {value}\n"
         ),
         encoding="utf-8",

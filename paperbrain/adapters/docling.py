@@ -1,4 +1,5 @@
 import inspect
+from importlib import import_module
 from pathlib import Path
 import re
 from typing import Protocol
@@ -56,6 +57,27 @@ class DoclingParser:
                 return False
         return True
 
+    @staticmethod
+    def _is_missing_optional_module(exc: ModuleNotFoundError, module_name: str) -> bool:
+        if exc.name == module_name:
+            return True
+
+        parent_module = module_name
+        while "." in parent_module:
+            parent_module = parent_module.rsplit(".", 1)[0]
+            if exc.name == parent_module:
+                return True
+        return False
+
+    @classmethod
+    def _import_optional_module(cls, module_name: str) -> object | None:
+        try:
+            return import_module(module_name)
+        except ModuleNotFoundError as exc:
+            if cls._is_missing_optional_module(exc, module_name):
+                return None
+            raise
+
     @classmethod
     def _build_pdf_format_option(
         cls, pdf_format_option_type: object, pipeline_options: object
@@ -82,29 +104,37 @@ class DoclingParser:
 
     def create_converter(self) -> object:
         try:
-            from docling.document_converter import DocumentConverter
+            document_converter_module = import_module("docling.document_converter")
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "docling is required for PDF parsing. Install it with `pip install docling`."
             ) from exc
-        try:
-            from docling.document_converter import PdfFormatOption
-            from docling.datamodel.pipeline_options import PdfPipelineOptions
-        except (ImportError, ModuleNotFoundError):
+
+        DocumentConverter = getattr(document_converter_module, "DocumentConverter", None)
+        if DocumentConverter is None:
+            raise RuntimeError(
+                "docling is required for PDF parsing. Install it with `pip install docling`."
+            )
+
+        pdf_format_option_type = getattr(document_converter_module, "PdfFormatOption", None)
+        pipeline_options_module = self._import_optional_module("docling.datamodel.pipeline_options")
+        if pdf_format_option_type is None or pipeline_options_module is None:
+            return DocumentConverter()
+
+        PdfPipelineOptions = getattr(pipeline_options_module, "PdfPipelineOptions", None)
+        if PdfPipelineOptions is None:
             return DocumentConverter()
 
         pipeline_options = PdfPipelineOptions()
         setattr(pipeline_options, "do_ocr", self.ocr_enabled)
 
-        pdf_option = self._build_pdf_format_option(PdfFormatOption, pipeline_options)
+        pdf_option = self._build_pdf_format_option(pdf_format_option_type, pipeline_options)
 
         format_options: dict[object, object] = {"pdf": pdf_option}
-        try:
-            from docling.datamodel.base_models import InputFormat
-        except (ImportError, ModuleNotFoundError):
-            pass
-        else:
-            input_format_pdf = getattr(InputFormat, "PDF", None)
+        base_models_module = self._import_optional_module("docling.datamodel.base_models")
+        if base_models_module is not None:
+            input_format_type = getattr(base_models_module, "InputFormat", None)
+            input_format_pdf = getattr(input_format_type, "PDF", None)
             if input_format_pdf is not None:
                 format_options = {input_format_pdf: pdf_option}
 

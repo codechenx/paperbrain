@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import importlib
 from pathlib import Path
 import sys
 import types
@@ -455,6 +456,60 @@ def test_docling_parser_create_converter_propagates_converter_type_errors(
     with pytest.raises(TypeError, match="converter constructor exploded"):
         DoclingParser(ocr_enabled=True).create_converter()
     assert called_without_format_options is False
+
+
+def test_docling_parser_create_converter_falls_back_when_ocr_classes_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeConverter:
+        def __init__(self, *, format_options: object | None = None) -> None:
+            captured["format_options"] = format_options
+
+    docling_module = types.ModuleType("docling")
+    document_converter_module = types.ModuleType("docling.document_converter")
+    document_converter_module.DocumentConverter = FakeConverter
+
+    monkeypatch.setitem(sys.modules, "docling", docling_module)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", document_converter_module)
+
+    converter = DoclingParser(ocr_enabled=True).create_converter()
+
+    assert isinstance(converter, FakeConverter)
+    assert captured["format_options"] is None
+
+
+def test_docling_parser_create_converter_propagates_pipeline_import_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakePdfFormatOption:
+        def __init__(self, *, pipeline_options: object) -> None:
+            _ = pipeline_options
+
+    class FakeConverter:
+        def __init__(self, *, format_options: object | None = None) -> None:
+            _ = format_options
+
+    docling_module = types.ModuleType("docling")
+    document_converter_module = types.ModuleType("docling.document_converter")
+    document_converter_module.DocumentConverter = FakeConverter
+    document_converter_module.PdfFormatOption = FakePdfFormatOption
+    datamodel_module = types.ModuleType("docling.datamodel")
+
+    monkeypatch.setitem(sys.modules, "docling", docling_module)
+    monkeypatch.setitem(sys.modules, "docling.document_converter", document_converter_module)
+    monkeypatch.setitem(sys.modules, "docling.datamodel", datamodel_module)
+
+    def failing_import(module_name: str) -> types.ModuleType:
+        if module_name == "docling.datamodel.pipeline_options":
+            raise ImportError("pipeline init exploded")
+        return importlib.import_module(module_name)
+
+    monkeypatch.setattr("paperbrain.adapters.docling.import_module", failing_import)
+
+    with pytest.raises(ImportError, match="pipeline init exploded"):
+        DoclingParser(ocr_enabled=True).create_converter()
 
 
 def test_docling_parser_extracts_structured_metadata_when_available(

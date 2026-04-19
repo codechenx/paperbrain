@@ -1,30 +1,27 @@
 import pytest
 
 from paperbrain.adapters.docling import DoclingParser
-from paperbrain.adapters.marker import MarkerParser
+from paperbrain.adapters.markitdown import MarkItDownParser
 from paperbrain.adapters.parser_factory import build_pdf_parser
 
 
-def test_build_pdf_parser_returns_marker() -> None:
-    parser = build_pdf_parser("marker", ocr_enabled=False)
-    assert isinstance(parser, MarkerParser)
+def test_build_pdf_parser_returns_markitdown() -> None:
+    parser = build_pdf_parser("markitdown", ocr_enabled=False)
+    assert isinstance(parser, MarkItDownParser)
 
 
-def test_build_pdf_parser_raises_when_marker_rejects_ocr_keyword(
+def test_build_pdf_parser_passes_ocr_enabled_to_markitdown_adapter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
 
-    def fake_marker_parser(*args: object, **kwargs: object) -> object:
+    def fake_markitdown_parser(*args: object, **kwargs: object) -> object:
         calls.append((args, dict(kwargs)))
-        if kwargs:
-            raise TypeError("unexpected keyword")
         return object()
 
-    monkeypatch.setattr("paperbrain.adapters.parser_factory.MarkerParser", fake_marker_parser)
+    monkeypatch.setattr("paperbrain.adapters.parser_factory.MarkItDownParser", fake_markitdown_parser)
 
-    with pytest.raises(TypeError, match="unexpected keyword"):
-        build_pdf_parser("marker", ocr_enabled=True)
+    build_pdf_parser("markitdown", ocr_enabled=True)
 
     assert calls == [((), {"ocr_enabled": True})]
 

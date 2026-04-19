@@ -11,7 +11,7 @@ class DummyConfig:
         self.embedding_model = "text-embedding-3-small"
         self.embeddings_enabled = True
         self.ocr_enabled = False
-        self.pdf_parser = "marker"
+        self.pdf_parser = "markitdown"
         self.gemini_api_key = ""
         self.ollama_api_key = ""
         self.ollama_base_url = ""

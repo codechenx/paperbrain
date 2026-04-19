@@ -6,9 +6,9 @@ DEFAULT_SUMMARY_MODEL = "openai:gpt-4.1-mini"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 DEFAULT_EMBEDDINGS_ENABLED = False
 DEFAULT_OCR_ENABLED = False
-DEFAULT_PDF_PARSER = "marker"
+DEFAULT_PDF_PARSER = "markitdown"
 SUPPORTED_1536D_EMBEDDING_MODELS = {DEFAULT_EMBEDDING_MODEL}
-SUPPORTED_PDF_PARSERS = {"marker", "docling"}
+SUPPORTED_PDF_PARSERS = {"markitdown", "docling"}
 
 
 @dataclass(slots=True)
@@ -44,6 +44,11 @@ def normalize_ollama_base_url(ollama_base_url: str) -> str:
 
 def normalize_pdf_parser(pdf_parser: str) -> str:
     normalized = pdf_parser.strip().lower()
+    if normalized == "marker":
+        raise ValueError(
+            "pdf_parser='marker' is no longer supported. "
+            "Use pdf_parser='markitdown' instead."
+        )
     if normalized not in SUPPORTED_PDF_PARSERS:
         supported = ", ".join(sorted(SUPPORTED_PDF_PARSERS))
         raise ValueError(f"Invalid pdf_parser in configuration file. Allowed values: {supported}")

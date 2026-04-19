@@ -45,9 +45,9 @@ def test_worker_main_builds_parser_with_selected_backend_and_ocr(
     monkeypatch.setattr(parser_worker, "build_pdf_parser", fake_build_pdf_parser)
     connection = FakeConnection()
 
-    parser_worker._worker_main(connection, parser_name="marker", ocr_enabled=True)
+    parser_worker._worker_main(connection, parser_name="markitdown", ocr_enabled=True)
 
-    assert captured["pdf_parser"] == "marker"
+    assert captured["pdf_parser"] == "markitdown"
     assert captured["ocr_enabled"] is True
     assert captured["create_converter"] is True
     assert connection.sent == [("ready", None), ("ok", None)]
@@ -150,7 +150,7 @@ def test_worker_main_falls_back_to_parse_pdf_for_non_converter_parser(
     monkeypatch.setattr(parser_worker, "build_pdf_parser", lambda *_args, **_kwargs: BasicParser())
     connection = FakeConnection()
 
-    parser_worker._worker_main(connection, parser_name="marker", ocr_enabled=False)
+    parser_worker._worker_main(connection, parser_name="markitdown", ocr_enabled=False)
 
     assert captured["path"] == pdf_path
     assert connection.sent[0] == ("ready", None)
@@ -200,7 +200,7 @@ def test_worker_main_does_not_create_converter_without_converter_parse_method(
     )
     connection = FakeConnection()
 
-    parser_worker._worker_main(connection, parser_name="marker", ocr_enabled=False)
+    parser_worker._worker_main(connection, parser_name="markitdown", ocr_enabled=False)
 
     assert captured["path"] == pdf_path
     assert "create_converter" not in captured
@@ -237,7 +237,7 @@ def test_worker_main_surfaces_parse_error(monkeypatch: pytest.MonkeyPatch, tmp_p
     monkeypatch.setattr(parser_worker, "build_pdf_parser", lambda *_args, **_kwargs: BrokenParser())
     connection = FakeConnection()
 
-    parser_worker._worker_main(connection, parser_name="marker", ocr_enabled=False)
+    parser_worker._worker_main(connection, parser_name="markitdown", ocr_enabled=False)
 
     assert connection.sent[0] == ("ready", None)
     assert connection.sent[1][0] == "error"
@@ -267,7 +267,7 @@ def test_worker_main_surfaces_startup_error(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(parser_worker, "build_pdf_parser", fake_build_pdf_parser)
     connection = FakeConnection()
 
-    parser_worker._worker_main(connection, parser_name="marker", ocr_enabled=False)
+    parser_worker._worker_main(connection, parser_name="markitdown", ocr_enabled=False)
 
     assert connection.sent == [("error", "ValueError: invalid parser config")]
     assert connection.closed is True
@@ -395,8 +395,8 @@ def test_parser_parse_worker_init_surfaces_startup_error(monkeypatch: pytest.Mon
     fake_context = FakeContext()
     monkeypatch.setattr(parser_worker, "get_context", lambda method: fake_context)
 
-    with pytest.raises(RuntimeError, match="Failed to start parser worker 'marker': ValueError: invalid parser config"):
-        parser_worker.ParserParseWorker(parser_name="marker", ocr_enabled=False)
+    with pytest.raises(RuntimeError, match="Failed to start parser worker 'markitdown': ValueError: invalid parser config"):
+        parser_worker.ParserParseWorker(parser_name="markitdown", ocr_enabled=False)
 
     assert fake_context.parent.closed is True
     assert fake_context.child.closed is True
@@ -456,11 +456,11 @@ def test_parser_parse_worker_wraps_parse_transport_failure(
     fake_context = FakeContext()
     monkeypatch.setattr(parser_worker, "get_context", lambda method: fake_context)
 
-    worker = parser_worker.ParserParseWorker(parser_name="marker", ocr_enabled=False)
+    worker = parser_worker.ParserParseWorker(parser_name="markitdown", ocr_enabled=False)
 
     with pytest.raises(
         RuntimeError,
-        match="Parser worker transport failure for 'marker' while parsing 'example.pdf': ConnectionResetError: socket closed",
+        match="Parser worker transport failure for 'markitdown' while parsing 'example.pdf': ConnectionResetError: socket closed",
     ):
         worker.parse(Path("example.pdf"))
 

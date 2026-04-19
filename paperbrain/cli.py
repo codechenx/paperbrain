@@ -78,7 +78,11 @@ def setup(
         False,
         "--ocr-enabled/--no-ocr-enabled",
     ),
-    pdf_parser: str = typer.Option(DEFAULT_PDF_PARSER, "--pdf-parser"),
+    pdf_parser: str = typer.Option(
+        DEFAULT_PDF_PARSER,
+        "--pdf-parser",
+        help="PDF parser to use (markitdown or docling)",
+    ),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
     test_connections: bool = typer.Option(
         True,

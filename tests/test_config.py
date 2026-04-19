@@ -51,7 +51,7 @@ def test_run_setup_passes_ocr_enabled_to_config_store(monkeypatch: pytest.Monkey
 
     run_setup(
         database_url="postgresql://localhost:5432/paperbrain",
-        docling_ocr_enabled=True,
+        ocr_enabled=True,
         pdf_parser="docling",
         config_path=config_path,
         test_connections=False,

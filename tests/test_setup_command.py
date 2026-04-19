@@ -1239,7 +1239,7 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
     assert calls["embeddings_seen"] is True
     assert calls["parse_worker_factory"] is not None
     calls["parse_worker_factory"]()
-    assert calls["worker_args"] == ("marker", False)
+    assert calls["worker_args"] == ("markitdown", False)
     assert calls["ingest_args"] == ([str(pdf_path)], False, True, 3, 10, 7)
 
 

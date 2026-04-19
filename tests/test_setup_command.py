@@ -1198,7 +1198,7 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
     monkeypatch.setattr("paperbrain.summary_provider.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
     monkeypatch.setattr(
         "paperbrain.summary_provider.build_pdf_parser",
-        lambda pdf_parser, *, docling_ocr_enabled: FakeParser(),
+        lambda pdf_parser, *, ocr_enabled: FakeParser(),
     )
     monkeypatch.setattr("paperbrain.cli.IngestService", FakeIngestService)
     monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
@@ -1311,7 +1311,7 @@ def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: An
     monkeypatch.setattr("paperbrain.summary_provider.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
     monkeypatch.setattr(
         "paperbrain.summary_provider.build_pdf_parser",
-        lambda pdf_parser, *, docling_ocr_enabled: FakeDoclingParser(ocr_enabled=docling_ocr_enabled),
+        lambda pdf_parser, *, ocr_enabled: FakeDoclingParser(ocr_enabled=ocr_enabled),
     )
     monkeypatch.setattr("paperbrain.cli.DoclingParseWorker", FakeDoclingParseWorker)
     monkeypatch.setattr("paperbrain.cli.IngestService", FakeIngestService)

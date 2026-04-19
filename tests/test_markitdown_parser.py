@@ -69,6 +69,28 @@ def test_markitdown_parser_create_converter_enables_plugins_for_ocr(
     assert captured["kwargs"] == {"enable_plugins": True}
 
 
+def test_markitdown_parser_create_converter_fails_fast_when_ocr_api_unsupported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeMarkItDown:
+        def __init__(self) -> None:
+            return None
+
+    markitdown_module = types.SimpleNamespace(MarkItDown=FakeMarkItDown)
+
+    def fake_import_module(name: str) -> object:
+        if name == "markitdown":
+            return markitdown_module
+        if name == "markitdown_ocr":
+            return object()
+        raise ModuleNotFoundError(name=name)
+
+    monkeypatch.setattr("paperbrain.adapters.markitdown.import_module", fake_import_module)
+
+    with pytest.raises(RuntimeError, match="enable_plugins"):
+        MarkItDownParser(ocr_enabled=True).create_converter()
+
+
 def test_markitdown_parser_returns_normalized_parsed_paper(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

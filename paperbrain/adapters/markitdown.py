@@ -79,7 +79,13 @@ class MarkItDownParser:
             converter_kwargs["enable_plugins"] = True
         try:
             converter = markitdown_type(**converter_kwargs)
-        except TypeError:
+        except TypeError as exc:
+            if self.ocr_enabled:
+                raise RuntimeError(
+                    "OCR is enabled, but this markitdown version does not support "
+                    "`enable_plugins`. Upgrade `markitdown[pdf]`/`markitdown-ocr`, "
+                    "or set ocr_enabled=false."
+                ) from exc
             converter = markitdown_type()
         return _MarkItDownConverterAdapter(converter)
 

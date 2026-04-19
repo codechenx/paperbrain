@@ -61,4 +61,9 @@ class MarkerParser:
 
     def parse_pdf(self, path: Path) -> ParsedPaper:
         converter = self.create_converter()
+        return self.parse_pdf_with_converter(path, converter)
+
+    def parse_pdf_with_converter(self, path: Path, converter: object) -> ParsedPaper:
+        if not path.exists():
+            raise FileNotFoundError(f"PDF file not found: {path}")
         return self._docling_parser.parse_pdf_with_converter(path, converter)

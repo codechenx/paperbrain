@@ -154,3 +154,28 @@ def test_marker_parser_returns_normalized_parsed_paper(
     assert parsed.source_path == str(pdf_path)
     assert parsed.corresponding_authors == ["alice@example.com"]
     assert parsed.full_text.startswith("Nature Medicine")
+
+
+def test_marker_parser_parse_pdf_with_converter_reuses_converter(tmp_path: Path) -> None:
+    pdf_path = tmp_path / "paper.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+
+    class FakeConverter:
+        def convert(self, file_path: str):  # noqa: ANN201
+            class Result:
+                document = None
+                markdown = (
+                    "Nature Medicine\n"
+                    "Published 2024\n"
+                    "Alice Example Bob Example\n"
+                    "Corresponding author: alice@example.com"
+                )
+                metadata = {}
+
+            assert file_path == str(pdf_path)
+            return Result()
+
+    parser = MarkerParser(ocr_enabled=False)
+    parsed = parser.parse_pdf_with_converter(pdf_path, FakeConverter())
+    assert parsed.title == "paper"
+    assert parsed.year == 2024

@@ -42,7 +42,7 @@ def test_run_setup_writes_project_config(tmp_path: Path) -> None:
     assert loaded.embedding_model == "text-embedding-3-small"
     assert loaded.embeddings_enabled is False
     assert loaded.ocr_enabled is False
-    assert loaded.pdf_parser == "marker"
+    assert loaded.pdf_parser == "markitdown"
     assert message == f"Saved configuration to {config_path}"
 
 

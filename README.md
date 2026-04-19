@@ -394,11 +394,13 @@ Use bounded ingest windows and parser worker recycling to keep memory stable:
 
 ```bash
 # Process 200 files at a time, starting from offset 0
-paperbrain ingest /path/to/pdfs --recursive --start-offset 0 --max-files 200 --parse-worker-recycle-every 25
+paperbrain ingest /path/to/pdfs --recursive --start-offset 0 --max-files 200 --parse-worker-recycle-every 5
 
 # Resume next window
-paperbrain ingest /path/to/pdfs --recursive --start-offset 200 --max-files 200 --parse-worker-recycle-every 25
+paperbrain ingest /path/to/pdfs --recursive --start-offset 200 --max-files 200 --parse-worker-recycle-every 5
 ```
+
+`--parse-worker-recycle-every` defaults to `5` for both Marker and Docling parsers.
 
 ### Expected export layout
 

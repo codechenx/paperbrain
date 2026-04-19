@@ -33,7 +33,7 @@ def test_summary_provider_openai(monkeypatch):
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", DummyConfigStore)
     monkeypatch.setattr(
         "paperbrain.summary_provider.build_pdf_parser",
-        lambda pdf_parser, *, docling_ocr_enabled: FakeParser(),
+        lambda pdf_parser, *, ocr_enabled: FakeParser(),
     )
     provider = SummaryProvider(config_path=Path("dummy"))
     assert provider.llm is not None
@@ -42,7 +42,7 @@ def test_summary_provider_openai(monkeypatch):
     assert provider.config.summary_model == "openai:gpt-3.5-turbo"
 
 
-def test_summary_provider_passes_docling_ocr_setting(monkeypatch):
+def test_summary_provider_passes_ocr_setting(monkeypatch):
     captured = {}
 
     class OcrEnabledConfig(DummyConfig):
@@ -61,8 +61,8 @@ def test_summary_provider_passes_docling_ocr_setting(monkeypatch):
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", OcrEnabledConfigStore)
     monkeypatch.setattr(
         "paperbrain.summary_provider.build_pdf_parser",
-        lambda pdf_parser, *, docling_ocr_enabled: captured.update(
-            {"pdf_parser": pdf_parser, "ocr_enabled": docling_ocr_enabled}
+        lambda pdf_parser, *, ocr_enabled: captured.update(
+            {"pdf_parser": pdf_parser, "ocr_enabled": ocr_enabled}
         )
         or object(),
     )

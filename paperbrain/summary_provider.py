@@ -40,7 +40,7 @@ class SummaryProvider:
         self.llm = self._build_llm()
         self.parser = build_pdf_parser(
             self.config.pdf_parser,
-            docling_ocr_enabled=self.config.ocr_enabled,
+            ocr_enabled=self.config.ocr_enabled,
         )
         self.embeddings = self._build_embeddings()
 

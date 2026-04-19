@@ -155,6 +155,56 @@ def test_worker_main_falls_back_to_parse_pdf_for_non_converter_parser(
     assert connection.sent[0][0] == "ok"
 
 
+def test_worker_main_does_not_create_converter_without_converter_parse_method(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pdf_path = tmp_path / "sample.pdf"
+    pdf_path.write_text("fake", encoding="utf-8")
+    captured: dict[str, Any] = {}
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self._commands = [("parse", str(pdf_path)), ("shutdown", None)]
+            self.sent: list[tuple[str, Any]] = []
+
+        def recv(self) -> tuple[str, Any]:
+            return self._commands.pop(0)
+
+        def send(self, payload: tuple[str, Any]) -> None:
+            self.sent.append(payload)
+
+        def close(self) -> None:
+            return None
+
+    class BasicParserWithConverterFactory:
+        def create_converter(self) -> object:
+            captured["create_converter"] = True
+            return object()
+
+        def parse_pdf(self, path: Path) -> ParsedPaper:
+            captured["path"] = path
+            return ParsedPaper(
+                title="basic",
+                journal="j",
+                year=2024,
+                authors=[],
+                corresponding_authors=[],
+                full_text="x",
+                source_path=str(path),
+            )
+
+    monkeypatch.setattr(
+        parser_worker, "build_pdf_parser", lambda *_args, **_kwargs: BasicParserWithConverterFactory()
+    )
+    connection = FakeConnection()
+
+    parser_worker._worker_main(connection, parser_name="marker", ocr_enabled=False)
+
+    assert captured["path"] == pdf_path
+    assert "create_converter" not in captured
+    assert connection.sent[0][0] == "ok"
+
+
 def test_worker_main_surfaces_parse_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     pdf_path = tmp_path / "sample.pdf"
     pdf_path.write_text("fake", encoding="utf-8")

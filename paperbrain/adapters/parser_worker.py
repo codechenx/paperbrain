@@ -12,7 +12,10 @@ from paperbrain.models import ParsedPaper
 
 def _worker_main(connection: Connection, parser_name: str, ocr_enabled: bool) -> None:
     parser = build_pdf_parser(parser_name, ocr_enabled=ocr_enabled)
-    converter = parser.create_converter() if hasattr(parser, "create_converter") else None
+    use_converter = hasattr(parser, "create_converter") and hasattr(
+        parser, "parse_pdf_with_converter"
+    )
+    converter = parser.create_converter() if use_converter else None
     try:
         while True:
             command, payload = connection.recv()
@@ -24,7 +27,7 @@ def _worker_main(connection: Connection, parser_name: str, ocr_enabled: bool) ->
                 continue
             try:
                 file_path = Path(str(payload))
-                if converter is not None and hasattr(parser, "parse_pdf_with_converter"):
+                if converter is not None:
                     parsed = parser.parse_pdf_with_converter(file_path, converter)
                 else:
                     parsed = parser.parse_pdf(file_path)

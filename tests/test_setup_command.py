@@ -1151,6 +1151,10 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
         def __init__(self, *, ocr_enabled: bool = False) -> None:
             _ = ocr_enabled
 
+    class FakeParserParseWorker:
+        def __init__(self, *, parser_name: str, ocr_enabled: bool = False) -> None:
+            calls["worker_args"] = (parser_name, ocr_enabled)
+
     class FakeIngestService:
         def __init__(
             self,
@@ -1200,6 +1204,7 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
         "paperbrain.summary_provider.build_pdf_parser",
         lambda pdf_parser, *, ocr_enabled: FakeParser(),
     )
+    monkeypatch.setattr("paperbrain.cli.ParserParseWorker", FakeParserParseWorker)
     monkeypatch.setattr("paperbrain.cli.IngestService", FakeIngestService)
     monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
     monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
@@ -1232,13 +1237,13 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
     assert calls["repo"] is fake_repo
     assert calls["parser_seen"] is True
     assert calls["embeddings_seen"] is True
-    assert calls["parse_worker_factory"] is None
+    assert calls["parse_worker_factory"] is not None
+    calls["parse_worker_factory"]()
+    assert calls["worker_args"] == ("marker", False)
     assert calls["ingest_args"] == ([str(pdf_path)], False, True, 3, 10, 7)
 
 
 def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: Any, tmp_path: Path) -> None:
-    from paperbrain.adapters.docling import DoclingParser
-
     calls: dict[str, Any] = {}
     config = AppConfig(
         database_url="postgresql://localhost:5432/paperbrain",
@@ -1268,12 +1273,13 @@ def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: An
         def __init__(self, *, client: Any, model: str) -> None:
             _ = (client, model)
 
-    class FakeDoclingParser(DoclingParser):
-        pass
-
-    class FakeDoclingParseWorker:
+    class FakeDoclingParser:
         def __init__(self, *, ocr_enabled: bool = False) -> None:
-            self.ocr_enabled = ocr_enabled
+            _ = ocr_enabled
+
+    class FakeParserParseWorker:
+        def __init__(self, *, parser_name: str, ocr_enabled: bool = False) -> None:
+            calls["worker_args"] = (parser_name, ocr_enabled)
 
     class FakeIngestService:
         def __init__(
@@ -1297,7 +1303,8 @@ def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: An
             max_files: int | None = None,
             parse_worker_recycle_every: int = 25,
         ) -> int:
-            _ = (paths, force_all, recursive, start_offset, max_files, parse_worker_recycle_every)
+            _ = (paths, force_all, recursive, start_offset, max_files)
+            calls["parse_worker_recycle_every"] = parse_worker_recycle_every
             return 1
 
     @contextmanager
@@ -1313,7 +1320,7 @@ def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: An
         "paperbrain.summary_provider.build_pdf_parser",
         lambda pdf_parser, *, ocr_enabled: FakeDoclingParser(ocr_enabled=ocr_enabled),
     )
-    monkeypatch.setattr("paperbrain.cli.DoclingParseWorker", FakeDoclingParseWorker)
+    monkeypatch.setattr("paperbrain.cli.ParserParseWorker", FakeParserParseWorker)
     monkeypatch.setattr("paperbrain.cli.IngestService", FakeIngestService)
     monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
     monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: connection)
@@ -1322,9 +1329,11 @@ def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: An
     result = runner.invoke(app, ["ingest", str(pdf_path), "--config-path", str(config_path)])
 
     assert result.exit_code == 0
+    assert calls["parse_worker_factory"] is not None
     worker = calls["parse_worker_factory"]()
-    assert isinstance(worker, FakeDoclingParseWorker)
-    assert worker.ocr_enabled is True
+    assert isinstance(worker, FakeParserParseWorker)
+    assert calls["worker_args"] == ("docling", True)
+    assert calls["parse_worker_recycle_every"] == 5
 
 
 def test_cli_search_uses_runtime_config_and_outputs_results(monkeypatch: Any, tmp_path: Path) -> None:

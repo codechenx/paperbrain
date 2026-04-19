@@ -12,13 +12,12 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - env guard
     uvicorn = None  # type: ignore[assignment]
 
-from paperbrain.adapters.docling import DoclingParser
-from paperbrain.adapters.docling_worker import DoclingParseWorker
 from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
 from paperbrain.adapters.gemini_client import GeminiClient
 from paperbrain.adapters.llm import GeminiSummaryAdapter, LLMAdapter, OllamaSummaryAdapter, OpenAISummaryAdapter
 from paperbrain.adapters.ollama_client import OllamaCloudClient
 from paperbrain.adapters.openai_client import OpenAIClient
+from paperbrain.adapters.parser_worker import ParserParseWorker
 from paperbrain.config import AppConfig, ConfigStore
 from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_PDF_PARSER, DEFAULT_SUMMARY_MODEL
 from paperbrain.summary_provider import SummaryProvider
@@ -136,13 +135,14 @@ def ingest(
     recursive: bool = typer.Option(False, "--recursive"),
     start_offset: int = typer.Option(0, "--start-offset", min=0),
     max_files: int | None = typer.Option(None, "--max-files", min=0),
-    parse_worker_recycle_every: int = typer.Option(25, "--parse-worker-recycle-every", min=1),
+    parse_worker_recycle_every: int = typer.Option(5, "--parse-worker-recycle-every", min=1),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
 ) -> None:
     runtime = build_runtime(config_path)
-    parse_worker_factory = None
-    if isinstance(runtime.parser, DoclingParser):
-        parse_worker_factory = lambda: DoclingParseWorker(ocr_enabled=runtime.parser.ocr_enabled)
+    parse_worker_factory = lambda: ParserParseWorker(
+        parser_name=runtime.config.pdf_parser,
+        ocr_enabled=runtime.config.ocr_enabled,
+    )
     with repo_from_url(runtime.config.database_url) as repo:
         inserted = IngestService(
             repo=repo,

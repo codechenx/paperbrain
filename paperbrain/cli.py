@@ -75,9 +75,9 @@ def setup(
         False,
         "--embeddings-enabled/--no-embeddings-enabled",
     ),
-    docling_ocr_enabled: bool = typer.Option(
+    ocr_enabled: bool = typer.Option(
         False,
-        "--docling-ocr-enabled/--no-docling-ocr-enabled",
+        "--ocr-enabled/--no-ocr-enabled",
     ),
     pdf_parser: str = typer.Option(DEFAULT_PDF_PARSER, "--pdf-parser"),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
@@ -112,7 +112,7 @@ def setup(
         summary_model=summary_model,
         embedding_model=embedding_model,
         embeddings_enabled=embeddings_enabled,
-        docling_ocr_enabled=docling_ocr_enabled,
+        ocr_enabled=ocr_enabled,
         pdf_parser=pdf_parser,
         config_path=config_path,
         test_connections=test_connections,

@@ -41,7 +41,7 @@ def test_run_setup_writes_project_config(tmp_path: Path) -> None:
     assert loaded.summary_model == "openai:gpt-4.1-mini"
     assert loaded.embedding_model == "text-embedding-3-small"
     assert loaded.embeddings_enabled is False
-    assert loaded.docling_ocr_enabled is False
+    assert loaded.ocr_enabled is False
     assert loaded.pdf_parser == "marker"
     assert message == f"Saved configuration to {config_path}"
 
@@ -357,7 +357,7 @@ def test_cli_setup_accepts_embeddings_enabled_flag(monkeypatch: Any) -> None:
     assert calls["embeddings_enabled"] is True
 
 
-def test_cli_setup_accepts_docling_ocr_enabled_flag(monkeypatch: Any) -> None:
+def test_cli_setup_accepts_ocr_enabled_flag(monkeypatch: Any) -> None:
     calls: dict[str, Any] = {}
 
     def fake_run_setup(**kwargs: Any) -> str:
@@ -376,12 +376,12 @@ def test_cli_setup_accepts_docling_ocr_enabled_flag(monkeypatch: Any) -> None:
             "sk-test",
             "--summary-model",
             "openai:gpt-4.1-mini",
-            "--docling-ocr-enabled",
+            "--ocr-enabled",
         ],
     )
 
     assert result.exit_code == 0
-    assert calls["docling_ocr_enabled"] is True
+    assert calls["ocr_enabled"] is True
 
 
 def test_cli_setup_accepts_pdf_parser_flag(monkeypatch: Any) -> None:
@@ -1246,7 +1246,7 @@ def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: An
         summary_model="openai:gpt-4.1-mini",
         embedding_model="text-embedding-3-small",
         embeddings_enabled=True,
-        docling_ocr_enabled=True,
+        ocr_enabled=True,
         pdf_parser="docling",
     )
     config_path = tmp_path / "config" / "paperbrain.conf"

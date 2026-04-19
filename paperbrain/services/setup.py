@@ -83,7 +83,7 @@ def run_setup(
     summary_model: str = DEFAULT_SUMMARY_MODEL,
     embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     embeddings_enabled: bool = DEFAULT_EMBEDDINGS_ENABLED,
-    docling_ocr_enabled: bool = False,
+    ocr_enabled: bool = False,
     pdf_parser: str = DEFAULT_PDF_PARSER,
     config_path: Path = Path.home() / ".config" / "paperbrain" / "paperbrain.conf",
     test_connections: bool = True,
@@ -149,7 +149,7 @@ def run_setup(
         summary_model=summary_model,
         embedding_model=embedding_model,
         embeddings_enabled=embeddings_enabled,
-        ocr_enabled=docling_ocr_enabled,
+        ocr_enabled=ocr_enabled,
         pdf_parser=normalized_pdf_parser,
     )
     return f"Saved configuration to {config_path}"

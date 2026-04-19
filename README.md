@@ -3,7 +3,7 @@
 PaperBrain is a Python CLI for building a local scientific knowledge base from PDFs.
 It uses:
 - **PostgreSQL + pgvector** for storage and hybrid retrieval
-- **Marker (default) or Docling** for PDF parsing
+- **MarkItDown (default) or Docling** for PDF parsing
 - **OpenAI** for optional embeddings and OpenAI summaries
 - **Markdown export** for Obsidian-style linked notes
 
@@ -173,7 +173,7 @@ This installs PaperBrain in editable mode with all core dependencies:
 - `openai` — OpenAI API client (optional embeddings + OpenAI summaries)
 - `google-genai` — Google Gemini API client
 - `ollama` — Ollama API client
-- `marker-pdf` — default PDF parsing
+- `markitdown[pdf]` — default PDF parsing
 - `docling` — optional alternate parser (with optional OCR)
 - `fastapi` + `uvicorn` — Internal web service (if needed)
 
@@ -283,7 +283,7 @@ summary_model = "openai:gpt-4.1-mini"
 embedding_model = "text-embedding-3-small"
 embeddings_enabled = false
 ocr_enabled = false
-pdf_parser = "marker"
+pdf_parser = "markitdown"
 ```
 
 Summary provider is selected from explicit summary model prefixes:
@@ -303,15 +303,16 @@ Embedding behavior:
 
 OCR behavior:
 
-- `ocr_enabled` is required and shared by Marker and Docling parsers
+- `ocr_enabled` is required and shared by MarkItDown and Docling parsers
 - Default is `ocr_enabled = false`
 - Enable OCR with `--ocr-enabled` for scanned/image-only PDFs
+- When `pdf_parser = "markitdown"`, OCR requires the `markitdown-ocr` plugin (`pip install markitdown-ocr`)
 - Parser-specific OCR behavior follows the selected parser (`pdf_parser`)
 
 PDF parser behavior:
 
-- `pdf_parser` is required in config and must be `marker` or `docling`
-- Default setup value is `pdf_parser = "marker"`
+- `pdf_parser` is required in config and must be `markitdown` or `docling`
+- Default setup value is `pdf_parser = "markitdown"`
 - Choose Docling with `--pdf-parser docling` when running `paperbrain setup`
 
 ### Initialize schema
@@ -400,7 +401,7 @@ paperbrain ingest /path/to/pdfs --recursive --start-offset 0 --max-files 200 --p
 paperbrain ingest /path/to/pdfs --recursive --start-offset 200 --max-files 200 --parse-worker-recycle-every 5
 ```
 
-`--parse-worker-recycle-every` defaults to `5` for both Marker and Docling parsers.
+`--parse-worker-recycle-every` defaults to `5` for both MarkItDown and Docling parsers.
 
 ### Expected export layout
 

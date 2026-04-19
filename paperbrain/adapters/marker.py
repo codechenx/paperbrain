@@ -31,7 +31,8 @@ class _MarkerConverterAdapter:
 
 
 class MarkerParser:
-    def __init__(self) -> None:
+    def __init__(self, *, ocr_enabled: bool = False) -> None:
+        self.ocr_enabled = ocr_enabled
         self._docling_parser = DoclingParser()
 
     def create_converter(self) -> object:
@@ -52,7 +53,10 @@ class MarkerParser:
                 "marker-pdf is required for Marker parsing. Install it with `pip install marker-pdf`."
             )
 
-        converter = PdfConverter(artifact_dict=create_model_dict())
+        converter_kwargs: dict[str, object] = {"artifact_dict": create_model_dict()}
+        if self.ocr_enabled:
+            converter_kwargs["config"] = {"force_ocr": True}
+        converter = PdfConverter(**converter_kwargs)
         return _MarkerConverterAdapter(converter=converter, text_from_rendered=text_from_rendered)
 
     def parse_pdf(self, path: Path) -> ParsedPaper:

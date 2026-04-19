@@ -5,6 +5,7 @@ from paperbrain.adapters.openai_client import OpenAIClient
 from paperbrain.config import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_EMBEDDINGS_ENABLED,
+    DEFAULT_OCR_ENABLED,
     DEFAULT_PDF_PARSER,
     DEFAULT_SUMMARY_MODEL,
     ConfigStore,
@@ -83,7 +84,7 @@ def run_setup(
     summary_model: str = DEFAULT_SUMMARY_MODEL,
     embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     embeddings_enabled: bool = DEFAULT_EMBEDDINGS_ENABLED,
-    ocr_enabled: bool = False,
+    ocr_enabled: bool = DEFAULT_OCR_ENABLED,
     pdf_parser: str = DEFAULT_PDF_PARSER,
     config_path: Path = Path.home() / ".config" / "paperbrain" / "paperbrain.conf",
     test_connections: bool = True,

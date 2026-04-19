@@ -5,7 +5,7 @@ import tomllib
 DEFAULT_SUMMARY_MODEL = "openai:gpt-4.1-mini"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 DEFAULT_EMBEDDINGS_ENABLED = False
-DEFAULT_DOCLING_OCR_ENABLED = False
+DEFAULT_OCR_ENABLED = False
 DEFAULT_PDF_PARSER = "marker"
 SUPPORTED_1536D_EMBEDDING_MODELS = {DEFAULT_EMBEDDING_MODEL}
 SUPPORTED_PDF_PARSERS = {"marker", "docling"}
@@ -18,7 +18,7 @@ class AppConfig:
     summary_model: str
     embedding_model: str
     embeddings_enabled: bool = DEFAULT_EMBEDDINGS_ENABLED
-    docling_ocr_enabled: bool = DEFAULT_DOCLING_OCR_ENABLED
+    ocr_enabled: bool = DEFAULT_OCR_ENABLED
     pdf_parser: str = DEFAULT_PDF_PARSER
     gemini_api_key: str = ""
     ollama_api_key: str = ""
@@ -64,7 +64,7 @@ class ConfigStore:
         summary_model: str = DEFAULT_SUMMARY_MODEL,
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
         embeddings_enabled: bool = DEFAULT_EMBEDDINGS_ENABLED,
-        docling_ocr_enabled: bool = DEFAULT_DOCLING_OCR_ENABLED,
+        ocr_enabled: bool = DEFAULT_OCR_ENABLED,
         pdf_parser: str = DEFAULT_PDF_PARSER,
     ) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,7 +82,7 @@ class ConfigStore:
             'summary_model = "{summary_model}"\n'
             'embedding_model = "{embedding_model}"\n'
             "embeddings_enabled = {embeddings_enabled}\n"
-            "docling_ocr_enabled = {docling_ocr_enabled}\n"
+            "ocr_enabled = {ocr_enabled}\n"
             'pdf_parser = "{pdf_parser}"\n'
         ).format(
             database_url=database_url.replace("\\", "\\\\").replace('"', '\\"'),
@@ -93,7 +93,7 @@ class ConfigStore:
             summary_model=summary_model.replace("\\", "\\\\").replace('"', '\\"'),
             embedding_model=embedding_model.replace("\\", "\\\\").replace('"', '\\"'),
             embeddings_enabled=str(embeddings_enabled).lower(),
-            docling_ocr_enabled=str(docling_ocr_enabled).lower(),
+            ocr_enabled=str(ocr_enabled).lower(),
             pdf_parser=normalized_pdf_parser.replace("\\", "\\\\").replace('"', '\\"'),
         )
         self.path.write_text(body, encoding="utf-8")
@@ -133,11 +133,11 @@ class ConfigStore:
         embeddings_enabled = section["embeddings_enabled"]
         if not isinstance(embeddings_enabled, bool):
             raise ValueError("Invalid embeddings_enabled in configuration file")
-        if "docling_ocr_enabled" not in section:
-            raise ValueError("Missing docling_ocr_enabled in configuration file")
-        docling_ocr_enabled = section["docling_ocr_enabled"]
-        if not isinstance(docling_ocr_enabled, bool):
-            raise ValueError("Invalid docling_ocr_enabled in configuration file")
+        if "ocr_enabled" not in section:
+            raise ValueError("Missing ocr_enabled in configuration file")
+        ocr_enabled = section["ocr_enabled"]
+        if not isinstance(ocr_enabled, bool):
+            raise ValueError("Invalid ocr_enabled in configuration file")
         if "pdf_parser" not in section:
             raise ValueError("Missing pdf_parser in configuration file")
         pdf_parser = section["pdf_parser"]
@@ -152,7 +152,7 @@ class ConfigStore:
             summary_model=summary_model,
             embedding_model=embedding_model,
             embeddings_enabled=embeddings_enabled,
-            docling_ocr_enabled=docling_ocr_enabled,
+            ocr_enabled=ocr_enabled,
             pdf_parser=normalized_pdf_parser,
             gemini_api_key=gemini_api_key,
             ollama_api_key=ollama_api_key,

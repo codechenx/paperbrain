@@ -304,6 +304,27 @@ def test_replace_chunks_raises_on_length_mismatch_without_sql() -> None:
     assert connection.transaction_exited == 0
 
 
+def test_replace_chunks_allows_empty_vectors_and_only_inserts_chunks() -> None:
+    connection = FakeConnection()
+    repo = PostgresRepo(connection)
+
+    repo.replace_chunks(
+        "paper-123",
+        chunks=["first chunk", "second chunk"],
+        vectors=[],
+    )
+
+    assert connection.transaction_entered == 1
+    assert connection.transaction_exited == 1
+    assert len(connection.executed) == 4
+    assert "DELETE FROM paper_embeddings" in connection.executed[0][0]
+    assert connection.executed[0][1] == ("paper-123",)
+    assert connection.executed[1] == ("DELETE FROM paper_chunks WHERE paper_id = %s;", ("paper-123",))
+    assert "INSERT INTO paper_chunks" in connection.executed[2][0]
+    assert "INSERT INTO paper_chunks" in connection.executed[3][0]
+    assert all("INSERT INTO paper_embeddings" not in sql for sql, _ in connection.executed)
+
+
 def test_upsert_person_cards_does_not_rebuild_links_when_relation_fields_absent() -> None:
     connection = FakeConnection()
     repo = PostgresRepo(connection)

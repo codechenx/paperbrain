@@ -37,6 +37,9 @@ class SearchRepository(Protocol):
     def browse(self, keyword: str, card_type: str) -> list[dict]:
         ...
 
+    def search_keyword(self, query: str, top_k: int) -> list[dict]:
+        ...
+
     def search_hybrid(self, query: str, query_vector: list[float], top_k: int) -> list[dict]:
         ...
 
@@ -54,14 +57,13 @@ class SearchService:
 
     def search(self, query: str, top_k: int = 10, include_cards: bool = False) -> list[dict]:
         if self.embedder is None:
-            raise RuntimeError("SearchService requires an embedder for openai-full hybrid search")
-
-        query_embeddings = self.embedder.embed([query])
-        if not query_embeddings:
-            raise ValueError("embedder returned no query vectors")
-        query_vector = _validate_query_vector(query_embeddings[0])
-
-        rows = self.repo.search_hybrid(query, query_vector, top_k)
+            rows = self.repo.search_keyword(query, top_k)
+        else:
+            query_embeddings = self.embedder.embed([query])
+            if not query_embeddings:
+                raise ValueError("embedder returned no query vectors")
+            query_vector = _validate_query_vector(query_embeddings[0])
+            rows = self.repo.search_hybrid(query, query_vector, top_k)
         paper_slugs = [row["paper_slug"] for row in rows]
         related = self.repo.fetch_related_cards(paper_slugs) if include_cards and paper_slugs else {}
         output: list[dict] = []

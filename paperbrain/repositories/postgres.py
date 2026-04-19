@@ -238,6 +238,40 @@ class PostgresRepo:
             for paper_slug, keyword_rank, vector_rank in rows
         ]
 
+    def search_keyword(self, query: str, top_k: int) -> list[dict]:
+        if top_k <= 0:
+            return []
+
+        rows = self.fetchall(
+            """
+            WITH ranked AS (
+                SELECT
+                    p.slug AS paper_slug,
+                    COALESCE(
+                        MAX(ts_rank_cd(to_tsvector('english', c.chunk_text), plainto_tsquery('english', %s))),
+                        0
+                    )::float AS keyword_rank
+                FROM papers p
+                JOIN paper_chunks c ON c.paper_id = p.id
+                GROUP BY p.slug
+            )
+            SELECT paper_slug, keyword_rank, 0::float AS vector_rank
+            FROM ranked
+            WHERE keyword_rank > 0
+            ORDER BY keyword_rank DESC, paper_slug
+            LIMIT %s;
+            """.strip(),
+            (query, top_k),
+        )
+        return [
+            {
+                "paper_slug": str(paper_slug),
+                "keyword_rank": float(keyword_rank),
+                "vector_rank": float(vector_rank),
+            }
+            for paper_slug, keyword_rank, vector_rank in rows
+        ]
+
     def list_person_slugs_linked_to_paper_slugs(self, paper_slugs: list[str]) -> list[str]:
         if not paper_slugs:
             return []
@@ -658,7 +692,7 @@ class PostgresRepo:
         return str(existing[0])
 
     def replace_chunks(self, paper_id: str, chunks: list[str], vectors: list[list[float]]) -> None:
-        if len(chunks) != len(vectors):
+        if vectors and len(chunks) != len(vectors):
             raise ValueError("chunks and vectors length mismatch")
         with self.transaction():
             self.execute(
@@ -669,7 +703,7 @@ class PostgresRepo:
                 (paper_id,),
             )
             self.execute("DELETE FROM paper_chunks WHERE paper_id = %s;", (paper_id,))
-            for chunk_index, (chunk_text, vector) in enumerate(zip(chunks, vectors, strict=True)):
+            for chunk_index, chunk_text in enumerate(chunks):
                 chunk_id = f"{paper_id}-chunk-{chunk_index}"
                 clean_chunk_text = _strip_nul_bytes(chunk_text)
                 self.execute(
@@ -679,11 +713,13 @@ class PostgresRepo:
                     """.strip(),
                     (chunk_id, paper_id, chunk_index, clean_chunk_text),
                 )
-                vector_literal = f"[{', '.join(str(value) for value in vector)}]"
-                self.execute(
-                    """
-                    INSERT INTO paper_embeddings (chunk_id, embedding)
-                    VALUES (%s, %s::vector);
-                    """.strip(),
-                    (chunk_id, vector_literal),
-                )
+                if vectors:
+                    vector = vectors[chunk_index]
+                    vector_literal = f"[{', '.join(str(value) for value in vector)}]"
+                    self.execute(
+                        """
+                        INSERT INTO paper_embeddings (chunk_id, embedding)
+                        VALUES (%s, %s::vector);
+                        """.strip(),
+                        (chunk_id, vector_literal),
+                    )

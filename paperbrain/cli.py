@@ -12,19 +12,19 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - env guard
     uvicorn = None  # type: ignore[assignment]
 
-from paperbrain.adapters.docling import DoclingParser
 from paperbrain.adapters.embedding import OpenAIEmbeddingAdapter
 from paperbrain.adapters.gemini_client import GeminiClient
 from paperbrain.adapters.llm import GeminiSummaryAdapter, LLMAdapter, OllamaSummaryAdapter, OpenAISummaryAdapter
 from paperbrain.adapters.ollama_client import OllamaCloudClient
 from paperbrain.adapters.openai_client import OpenAIClient
+from paperbrain.adapters.parser_worker import ParserParseWorker
 from paperbrain.config import AppConfig, ConfigStore
-from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_SUMMARY_MODEL
+from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_PDF_PARSER, DEFAULT_SUMMARY_MODEL
 from paperbrain.summary_provider import SummaryProvider
 from paperbrain.db import connect
 from paperbrain.repositories.postgres import PostgresRepo
 from paperbrain.services.export import run_export
-from paperbrain.services.ingest import IngestService
+from paperbrain.services.ingest import IngestService, Parser
 from paperbrain.services.init import run_init
 from paperbrain.services.lint import run_lint
 from paperbrain.services.search import SearchService
@@ -40,8 +40,8 @@ SUPPORTED_CARD_SCOPES = ("all", "paper", "person", "topic")
 @dataclass(slots=True)
 class RuntimeAdapters:
     config: AppConfig
-    parser: DoclingParser
-    embeddings: OpenAIEmbeddingAdapter
+    parser: Parser
+    embeddings: OpenAIEmbeddingAdapter | None
     llm: LLMAdapter
 
 
@@ -70,18 +70,29 @@ def setup(
     ollama_base_url: str = typer.Option("https://ollama.com", "--ollama-base-url", help="Ollama base URL"),
     summary_model: str = typer.Option(DEFAULT_SUMMARY_MODEL, "--summary-model"),
     embedding_model: str = typer.Option(DEFAULT_EMBEDDING_MODEL, "--embedding-model"),
+    embeddings_enabled: bool = typer.Option(
+        False,
+        "--embeddings-enabled/--no-embeddings-enabled",
+    ),
+    ocr_enabled: bool = typer.Option(
+        False,
+        "--ocr-enabled/--no-ocr-enabled",
+    ),
+    pdf_parser: str = typer.Option(DEFAULT_PDF_PARSER, "--pdf-parser"),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
     test_connections: bool = typer.Option(
         True,
         "--test-connections/--no-test-connections",
-        help="Validate database, OpenAI embeddings, and provider-aware summary connectivity before writing config",
+        help="Validate database and provider connectivity before writing config",
     ),
 ) -> None:
     if openai_api_key is not None:
         resolved_openai_api_key = openai_api_key.strip()
     else:
         resolved_openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not resolved_openai_api_key and test_connections:
+    summary_uses_openai = summary_model.strip().lower().startswith("openai:")
+    needs_openai_key = embeddings_enabled or summary_uses_openai
+    if not resolved_openai_api_key and test_connections and needs_openai_key:
         resolved_openai_api_key = typer.prompt("OpenAI API key", hide_input=True).strip()
     if gemini_api_key is not None:
         resolved_gemini_api_key = gemini_api_key.strip()
@@ -99,6 +110,9 @@ def setup(
         ollama_base_url=ollama_base_url,
         summary_model=summary_model,
         embedding_model=embedding_model,
+        embeddings_enabled=embeddings_enabled,
+        ocr_enabled=ocr_enabled,
+        pdf_parser=pdf_parser,
         config_path=config_path,
         test_connections=test_connections,
     )
@@ -119,12 +133,29 @@ def ingest(
     path: Path = typer.Argument(..., exists=True),
     force_all: bool = typer.Option(False, "--force-all"),
     recursive: bool = typer.Option(False, "--recursive"),
+    start_offset: int = typer.Option(0, "--start-offset", min=0),
+    max_files: int | None = typer.Option(None, "--max-files", min=0),
+    parse_worker_recycle_every: int = typer.Option(5, "--parse-worker-recycle-every", min=1),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
 ) -> None:
     runtime = build_runtime(config_path)
+    parse_worker_factory = lambda: ParserParseWorker(
+        parser_name=runtime.config.pdf_parser,
+        ocr_enabled=runtime.config.ocr_enabled,
+    )
     with repo_from_url(runtime.config.database_url) as repo:
-        inserted = IngestService(repo=repo, parser=runtime.parser, embeddings=runtime.embeddings).ingest_paths(
-            [str(path)], force_all=force_all, recursive=recursive
+        inserted = IngestService(
+            repo=repo,
+            parser=runtime.parser,
+            embeddings=runtime.embeddings,
+            parse_worker_factory=parse_worker_factory,
+        ).ingest_paths(
+            [str(path)],
+            force_all=force_all,
+            recursive=recursive,
+            start_offset=start_offset,
+            max_files=max_files,
+            parse_worker_recycle_every=parse_worker_recycle_every,
         )
     typer.echo(f"Ingested {inserted} paper(s).")
 

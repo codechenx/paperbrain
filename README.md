@@ -3,8 +3,8 @@
 PaperBrain is a Python CLI for building a local scientific knowledge base from PDFs.
 It uses:
 - **PostgreSQL + pgvector** for storage and hybrid retrieval
-- **Docling** for PDF parsing/OCR
-- **OpenAI** for embeddings and provider-selected summaries
+- **Marker (default) or Docling** for PDF parsing
+- **OpenAI** for optional embeddings and OpenAI summaries
 - **Markdown export** for Obsidian-style linked notes
 
 ---
@@ -22,7 +22,7 @@ PaperBrain is a **card-system design** for a **scientific question-centric** pap
 
 PaperBrain focuses on a **question-centric workflow**:
 1. Ingest PDFs and extract metadata/text for question-aware synthesis
-2. Build chunk embeddings for question-grounded hybrid retrieval
+2. Optionally build chunk embeddings for hybrid retrieval (disabled by default)
 3. Generate structured **paper/person/topic** cards around questions and evidence
 4. Link cards bidirectionally across questions, people, and topics
 5. Export everything as markdown files for iterative question tracking
@@ -36,9 +36,12 @@ PaperBrain focuses on a **question-centric workflow**:
 │ Local PDFs (single file/dir) │
 └──────────────┬───────────────┘
                │ paperbrain ingest [--recursive] [--force-all]
+               │                  [--start-offset N] [--max-files N]
+               │                  [--parse-worker-recycle-every N]
                ▼
       ┌─────────────────────────────┐
-      │ DoclingParser                │
+      │ MarkerParser (default)       │
+      │ or DoclingParser             │
       │ - full text                  │
       │ - first-page metadata clues  │
       │   (authors/journal/year/CA)  │
@@ -144,9 +147,11 @@ Topic card (topics/<normalized-theme>)
   brew install libpq
   ```
 
-### API Keys (at least one required)
+### API Keys (provider-dependent)
 
-- **OpenAI**: Required for embeddings (used by all pipelines). Get from https://platform.openai.com/api-keys
+- **OpenAI**: Required only when either:
+  - `summary_model` uses `openai:*`, or
+  - embeddings are enabled with `--embeddings-enabled`
 - **Summary provider** (choose one):
   - **OpenAI**: For GPT-4 mini summaries
   - **Google Gemini**: For Gemini 2.5 flash summaries
@@ -165,10 +170,11 @@ python3 -m pip install -e .
 This installs PaperBrain in editable mode with all core dependencies:
 - `typer` — CLI framework
 - `psycopg[binary]` — PostgreSQL driver
-- `openai` — OpenAI API client (embeddings + summaries)
+- `openai` — OpenAI API client (optional embeddings + OpenAI summaries)
 - `google-genai` — Google Gemini API client
 - `ollama` — Ollama API client
-- `docling` — PDF parsing and OCR
+- `marker-pdf` — default PDF parsing
+- `docling` — optional alternate parser (with optional OCR)
 - `fastapi` + `uvicorn` — Internal web service (if needed)
 
 **Via pip (released versions only):**
@@ -224,7 +230,6 @@ For Gemini summary models, pass the Gemini key and a Gemini model name:
 ```bash
 paperbrain setup \
   --url postgresql://<user>:<pass>@localhost:5432/paperbrain \
-  --openai-api-key $OPENAI_API_KEY \
   --gemini-api-key $GEMINI_API_KEY \
   --summary-model gemini:gemini-2.5-flash
 ```
@@ -235,17 +240,31 @@ You can also override the Ollama base URL:
 ```bash
 paperbrain setup \
   --url postgresql://<user>:<pass>@localhost:5432/paperbrain \
-  --openai-api-key $OPENAI_API_KEY \
   --ollama-api-key $OLLAMA_API_KEY \
   --summary-model ollama:llama3.2
 
 # Optional custom Ollama endpoint
 paperbrain setup \
   --url postgresql://<user>:<pass>@localhost:5432/paperbrain \
-  --openai-api-key $OPENAI_API_KEY \
   --ollama-api-key $OLLAMA_API_KEY \
   --ollama-base-url https://ollama.example \
   --summary-model ollama:llama3.2
+
+# Optional: enable embeddings + hybrid search
+paperbrain setup \
+  --url postgresql://<user>:<pass>@localhost:5432/paperbrain \
+  --openai-api-key $OPENAI_API_KEY \
+  --summary-model gemini:gemini-2.5-flash \
+  --embeddings-enabled \
+  --embedding-model text-embedding-3-small
+
+# Optional: enable Docling OCR during parsing (default is off)
+paperbrain setup \
+  --url postgresql://<user>:<pass>@localhost:5432/paperbrain \
+  --gemini-api-key $GEMINI_API_KEY \
+  --summary-model gemini:gemini-2.5-flash \
+  --pdf-parser docling \
+  --ocr-enabled
 ```
 
 Default config path is:
@@ -262,6 +281,9 @@ ollama_api_key = "ol-..."
 ollama_base_url = "https://ollama.com"
 summary_model = "openai:gpt-4.1-mini"
 embedding_model = "text-embedding-3-small"
+embeddings_enabled = false
+ocr_enabled = false
+pdf_parser = "marker"
 ```
 
 Summary provider is selected from explicit summary model prefixes:
@@ -271,6 +293,26 @@ Summary provider is selected from explicit summary model prefixes:
 - `ollama:*` models use Ollama for summaries
 
 Legacy unprefixed selectors (for example `gpt-4.1-mini` or `gemini-2.5-flash`) are rejected.
+
+Embedding behavior:
+
+- Default is `embeddings_enabled = false`
+- When disabled, ingest stores papers/chunks but skips vector generation
+- Search automatically falls back to keyword-only ranking
+- Enable embeddings with `--embeddings-enabled` for hybrid keyword + vector search
+
+OCR behavior:
+
+- `ocr_enabled` is required and shared by Marker and Docling parsers
+- Default is `ocr_enabled = false`
+- Enable OCR with `--ocr-enabled` for scanned/image-only PDFs
+- Parser-specific OCR behavior follows the selected parser (`pdf_parser`)
+
+PDF parser behavior:
+
+- `pdf_parser` is required in config and must be `marker` or `docling`
+- Default setup value is `pdf_parser = "marker"`
+- Choose Docling with `--pdf-parser docling` when running `paperbrain setup`
 
 ### Initialize schema
 
@@ -290,11 +332,11 @@ paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --for
 
 | Command | Purpose | Key options |
 |---|---|---|
-| `paperbrain setup` | Save config and validate connections | `--url`, `--openai-api-key`, `--gemini-api-key`, `--ollama-api-key`, `--ollama-base-url`, `--summary-model`, `--embedding-model`, `--config-path`, `--test-connections/--no-test-connections` |
+| `paperbrain setup` | Save config and validate connections | `--url`, `--openai-api-key`, `--gemini-api-key`, `--ollama-api-key`, `--ollama-base-url`, `--summary-model`, `--embedding-model`, `--embeddings-enabled/--no-embeddings-enabled`, `--ocr-enabled/--no-ocr-enabled`, `--pdf-parser`, `--config-path`, `--test-connections/--no-test-connections` |
 | `paperbrain init` | Apply DB schema | `--url`, `--force` |
-| `paperbrain ingest PATH` | Parse PDFs and store chunks/embeddings | `--recursive`, `--force-all`, `--config-path` |
+| `paperbrain ingest PATH` | Parse PDFs and store chunks (embeddings optional) | `--recursive`, `--force-all`, `--start-offset`, `--max-files`, `--parse-worker-recycle-every`, `--config-path` |
 | `paperbrain browse KEYWORD` | Keyword browse card bodies | `--type [paper\|person\|topic\|all]`, `--config-path` |
-| `paperbrain search QUERY` | Hybrid keyword + vector paper search | `--top-k`, `--include-cards`, `--config-path` |
+| `paperbrain search QUERY` | Hybrid search when enabled, keyword-only otherwise | `--top-k`, `--include-cards`, `--config-path` |
 | `paperbrain summarize` | Build/update paper/person/topic cards | `--card-scope [all\|paper\|person\|topic]`, `--config-path` |
 | `paperbrain lint` | Run quality checks/fixes | `--config-path` |
 | `paperbrain stats` | Show corpus counts | `--config-path` |
@@ -311,10 +353,13 @@ paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --for
 paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --openai-api-key $OPENAI_API_KEY --summary-model openai:gpt-4.1-mini
 
 # 1b) Or use Gemini for summaries
-paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --openai-api-key $OPENAI_API_KEY --gemini-api-key $GEMINI_API_KEY --summary-model gemini:gemini-2.5-flash
+paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --gemini-api-key $GEMINI_API_KEY --summary-model gemini:gemini-2.5-flash
 
 # 1c) Or use Ollama for summaries (optional: add --ollama-base-url)
-paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --openai-api-key $OPENAI_API_KEY --ollama-api-key $OLLAMA_API_KEY --summary-model ollama:llama3.2
+paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --ollama-api-key $OLLAMA_API_KEY --summary-model ollama:llama3.2
+
+# 1d) Optional: enable embeddings (for hybrid search)
+paperbrain setup --url postgresql://<user>:<pass>@localhost:5432/paperbrain --gemini-api-key $GEMINI_API_KEY --summary-model gemini:gemini-2.5-flash --embeddings-enabled --openai-api-key $OPENAI_API_KEY
 
 # 2) Initialize schema
 paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --force
@@ -342,6 +387,20 @@ paperbrain summarize --card-scope paper
 paperbrain summarize --card-scope person
 paperbrain summarize --card-scope topic
 ```
+
+### Large-corpus ingest (1000+ PDFs)
+
+Use bounded ingest windows and parser worker recycling to keep memory stable:
+
+```bash
+# Process 200 files at a time, starting from offset 0
+paperbrain ingest /path/to/pdfs --recursive --start-offset 0 --max-files 200 --parse-worker-recycle-every 5
+
+# Resume next window
+paperbrain ingest /path/to/pdfs --recursive --start-offset 200 --max-files 200 --parse-worker-recycle-every 5
+```
+
+`--parse-worker-recycle-every` defaults to `5` for both Marker and Docling parsers.
 
 ### Expected export layout
 

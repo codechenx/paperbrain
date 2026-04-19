@@ -11,6 +11,7 @@ class FakeSearchRepo:
     def __init__(self) -> None:
         self.browse_calls: list[tuple[str, str]] = []
         self.search_calls: list[tuple[str, list[float], int]] = []
+        self.keyword_calls: list[tuple[str, int]] = []
         self.related_calls: list[list[str]] = []
 
     def browse(self, keyword: str, card_type: str) -> list[dict]:
@@ -20,6 +21,10 @@ class FakeSearchRepo:
     def search_hybrid(self, query: str, query_vector: list[float], top_k: int) -> list[dict]:
         self.search_calls.append((query, query_vector, top_k))
         return [{"paper_slug": "papers/a", "keyword_rank": 0.8, "vector_rank": 0.2}][:top_k]
+
+    def search_keyword(self, query: str, top_k: int) -> list[dict]:
+        self.keyword_calls.append((query, top_k))
+        return [{"paper_slug": "papers/a", "keyword_rank": 0.8, "vector_rank": 0.0}][:top_k]
 
     def fetch_related_cards(self, paper_slugs: list[str]) -> dict[str, list[dict]]:
         self.related_calls.append(paper_slugs)
@@ -125,13 +130,13 @@ def test_search_without_include_cards_skips_related_lookup() -> None:
     assert "cards" not in rows[0]
 
 
-def test_search_without_embedder_raises_clear_error() -> None:
+def test_search_without_embedder_falls_back_to_keyword_only() -> None:
     repo = FakeSearchRepo()
     service = SearchService(repo=repo)
 
-    with pytest.raises(RuntimeError, match="embedder"):
-        service.search("p53", top_k=1, include_cards=False)
-
+    rows = service.search("p53", top_k=1, include_cards=False)
+    assert rows[0]["score"] == 0.48
+    assert repo.keyword_calls == [("p53", 1)]
     assert repo.search_calls == []
 
 

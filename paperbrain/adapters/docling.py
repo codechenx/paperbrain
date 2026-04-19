@@ -1,3 +1,5 @@
+import inspect
+from importlib import import_module
 from pathlib import Path
 import re
 from typing import Protocol
@@ -11,6 +13,177 @@ class DoclingAdapter(Protocol):
 
 
 class DoclingParser:
+    def __init__(self, *, ocr_enabled: bool = False) -> None:
+        self.ocr_enabled = ocr_enabled
+
+    @staticmethod
+    def _get_callable_signature(callable_obj: object) -> inspect.Signature | None:
+        try:
+            return inspect.signature(callable_obj)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _supports_keyword_argument(signature: inspect.Signature, argument_name: str) -> bool:
+        for parameter in signature.parameters.values():
+            if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+                return True
+            if parameter.name == argument_name and parameter.kind in (
+                inspect.Parameter.KEYWORD_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _supports_named_positional_argument(signature: inspect.Signature, argument_name: str) -> bool:
+        for parameter in signature.parameters.values():
+            if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
+                return True
+            if parameter.kind in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            ):
+                if parameter.name == argument_name:
+                    return True
+        return False
+
+    @staticmethod
+    def _can_call_without_arguments(signature: inspect.Signature) -> bool:
+        for parameter in signature.parameters.values():
+            if parameter.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                continue
+            if parameter.default is inspect.Parameter.empty:
+                return False
+        return True
+
+    @staticmethod
+    def _is_missing_optional_module(exc: ModuleNotFoundError, module_name: str) -> bool:
+        if exc.name == module_name:
+            return True
+
+        parent_module = module_name
+        while "." in parent_module:
+            parent_module = parent_module.rsplit(".", 1)[0]
+            if exc.name == parent_module:
+                return True
+        return False
+
+    @classmethod
+    def _import_optional_module(cls, module_name: str) -> object | None:
+        try:
+            return import_module(module_name)
+        except ModuleNotFoundError as exc:
+            if cls._is_missing_optional_module(exc, module_name):
+                return None
+            raise
+
+    @classmethod
+    def _build_pdf_format_option(
+        cls, pdf_format_option_type: object, pipeline_options: object
+    ) -> object:
+        signature = cls._get_callable_signature(pdf_format_option_type)
+        if signature is None or cls._supports_keyword_argument(signature, "pipeline_options"):
+            return pdf_format_option_type(pipeline_options=pipeline_options)
+        if cls._supports_named_positional_argument(signature, "pipeline_options"):
+            return pdf_format_option_type(pipeline_options)
+        raise TypeError("PdfFormatOption constructor does not accept pipeline_options")
+
+    @classmethod
+    def _build_document_converter(
+        cls,
+        converter_type: object,
+        format_options: dict[object, object],
+        *,
+        require_format_options: bool,
+    ) -> object:
+        signature = cls._get_callable_signature(converter_type)
+        if signature is None or cls._supports_keyword_argument(signature, "format_options"):
+            return converter_type(format_options=format_options)
+        if cls._supports_named_positional_argument(signature, "format_options"):
+            return converter_type(format_options)
+        if cls._can_call_without_arguments(signature):
+            if require_format_options:
+                raise RuntimeError("DocumentConverter constructor does not accept format_options")
+            return converter_type()
+        if require_format_options:
+            raise RuntimeError("DocumentConverter constructor does not accept format_options")
+        raise TypeError("DocumentConverter constructor does not accept format_options")
+
+    @staticmethod
+    def _raise_ocr_unavailable(reason: str) -> None:
+        raise RuntimeError(
+            "OCR cannot be enabled with the current docling installation "
+            f"({reason}). Install a docling version with OCR support/dependencies "
+            "or set ocr_enabled=False."
+        )
+
+    def create_converter(self) -> object:
+        try:
+            document_converter_module = import_module("docling.document_converter")
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "docling is required for PDF parsing. Install it with `pip install docling`."
+            ) from exc
+
+        DocumentConverter = getattr(document_converter_module, "DocumentConverter", None)
+        if DocumentConverter is None:
+            raise RuntimeError(
+                "docling is required for PDF parsing. Install it with `pip install docling`."
+            )
+
+        pdf_format_option_type = getattr(document_converter_module, "PdfFormatOption", None)
+        try:
+            pipeline_options_module = self._import_optional_module("docling.datamodel.pipeline_options")
+        except ImportError:
+            if self.ocr_enabled:
+                raise
+            return DocumentConverter()
+        if pdf_format_option_type is None or pipeline_options_module is None:
+            if self.ocr_enabled:
+                missing = []
+                if pdf_format_option_type is None:
+                    missing.append("docling.document_converter.PdfFormatOption is missing")
+                if pipeline_options_module is None:
+                    missing.append("docling.datamodel.pipeline_options is unavailable")
+                self._raise_ocr_unavailable("; ".join(missing))
+            return DocumentConverter()
+
+        PdfPipelineOptions = getattr(pipeline_options_module, "PdfPipelineOptions", None)
+        if PdfPipelineOptions is None:
+            if self.ocr_enabled:
+                self._raise_ocr_unavailable("docling.datamodel.pipeline_options.PdfPipelineOptions is missing")
+            return DocumentConverter()
+
+        pipeline_options = PdfPipelineOptions()
+        setattr(pipeline_options, "do_ocr", self.ocr_enabled)
+
+        pdf_option = self._build_pdf_format_option(pdf_format_option_type, pipeline_options)
+
+        format_options: dict[object, object] = {"pdf": pdf_option}
+        try:
+            base_models_module = self._import_optional_module("docling.datamodel.base_models")
+        except ImportError:
+            if self.ocr_enabled:
+                raise
+            return DocumentConverter()
+        if base_models_module is not None:
+            input_format_type = getattr(base_models_module, "InputFormat", None)
+            input_format_pdf = getattr(input_format_type, "PDF", None)
+            if input_format_pdf is not None:
+                format_options = {input_format_pdf: pdf_option}
+
+        try:
+            return self._build_document_converter(
+                DocumentConverter,
+                format_options,
+                require_format_options=self.ocr_enabled,
+            )
+        except RuntimeError as exc:
+            if self.ocr_enabled and "does not accept format_options" in str(exc):
+                self._raise_ocr_unavailable("docling.document_converter.DocumentConverter lacks format_options support")
+            raise
+
     @staticmethod
     def _strip_image_payloads(markdown_content: str) -> str:
         cleaned = markdown_content.replace("\r\n", "\n").replace("\r", "\n")
@@ -130,14 +303,12 @@ class DoclingParser:
     def parse_pdf(self, path: Path) -> ParsedPaper:
         if not path.exists():
             raise FileNotFoundError(f"PDF file not found: {path}")
-        try:
-            from docling.document_converter import DocumentConverter
-        except ModuleNotFoundError as exc:
-            raise RuntimeError(
-                "docling is required for PDF parsing. Install it with `pip install docling`."
-            ) from exc
+        converter = self.create_converter()
+        return self.parse_pdf_with_converter(path, converter)
 
-        converter = DocumentConverter()
+    def parse_pdf_with_converter(self, path: Path, converter: object) -> ParsedPaper:
+        if not path.exists():
+            raise FileNotFoundError(f"PDF file not found: {path}")
         result = converter.convert(str(path))
         document = getattr(result, "document", None)
         if document is not None and hasattr(document, "export_to_markdown"):

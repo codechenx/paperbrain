@@ -2,8 +2,15 @@ from pathlib import Path
 
 from paperbrain.adapters.ollama_client import OllamaCloudClient
 from paperbrain.adapters.openai_client import OpenAIClient
-from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_SUMMARY_MODEL
-from paperbrain.config import ConfigStore, validate_embedding_model_for_schema
+from paperbrain.config import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_EMBEDDINGS_ENABLED,
+    DEFAULT_PDF_PARSER,
+    DEFAULT_SUMMARY_MODEL,
+    ConfigStore,
+    normalize_pdf_parser,
+    validate_embedding_model_for_schema,
+)
 from paperbrain.db import connect
 
 try:  # pragma: no cover - optional dependency
@@ -75,6 +82,9 @@ def run_setup(
     ollama_base_url: str = "https://ollama.com",
     summary_model: str = DEFAULT_SUMMARY_MODEL,
     embedding_model: str = DEFAULT_EMBEDDING_MODEL,
+    embeddings_enabled: bool = DEFAULT_EMBEDDINGS_ENABLED,
+    ocr_enabled: bool = False,
+    pdf_parser: str = DEFAULT_PDF_PARSER,
     config_path: Path = Path.home() / ".config" / "paperbrain" / "paperbrain.conf",
     test_connections: bool = True,
 ) -> str:
@@ -84,7 +94,9 @@ def run_setup(
         raise ValueError("Summary model must be non-empty")
     if not embedding_model.strip():
         raise ValueError("Embedding model must be non-empty")
-    validate_embedding_model_for_schema(embedding_model)
+    if embeddings_enabled:
+        validate_embedding_model_for_schema(embedding_model)
+    normalized_pdf_parser = normalize_pdf_parser(pdf_parser)
     # parse provider:model explicitly (always validate prefix)
     parsed = parse_summary_model(summary_model)
     if test_connections:
@@ -92,14 +104,21 @@ def run_setup(
             _validate_database_connection(database_url)
         except Exception as exc:
             raise RuntimeError(f"Setup failed during database validation: {exc}") from exc
+        summary_uses_openai = parsed.provider == "openai"
         summary_uses_gemini = parsed.provider == "gemini"
         summary_uses_ollama = parsed.provider == "ollama"
         try:
-            openai_client = _validate_openai_embedding_connection(
-                openai_api_key=openai_api_key,
-                embedding_model=embedding_model,
-            )
-            if parsed.provider == "openai":
+            openai_client: OpenAIClient | None = None
+            if embeddings_enabled:
+                openai_client = _validate_openai_embedding_connection(
+                    openai_api_key=openai_api_key,
+                    embedding_model=embedding_model,
+                )
+            if summary_uses_openai:
+                if openai_client is None:
+                    if not openai_api_key.strip():
+                        raise ValueError("OpenAI API key is required when testing connections")
+                    openai_client = OpenAIClient(api_key=openai_api_key)
                 _validate_openai_summary_connection(openai_client, parsed.model)
         except Exception as exc:
             raise RuntimeError(f"Setup failed during OpenAI validation: {exc}") from exc
@@ -129,5 +148,8 @@ def run_setup(
         ollama_base_url=ollama_base_url,
         summary_model=summary_model,
         embedding_model=embedding_model,
+        embeddings_enabled=embeddings_enabled,
+        ocr_enabled=ocr_enabled,
+        pdf_parser=normalized_pdf_parser,
     )
     return f"Saved configuration to {config_path}"

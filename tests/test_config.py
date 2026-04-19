@@ -5,6 +5,7 @@ import stat
 import pytest
 
 from paperbrain.config import ConfigStore
+from paperbrain.services.setup import run_setup
 
 
 def test_save_and_load_config_round_trip(tmp_path: Path) -> None:
@@ -18,6 +19,48 @@ def test_save_and_load_config_round_trip(tmp_path: Path) -> None:
     assert loaded.embeddings_enabled is False
     assert loaded.ocr_enabled is False
     assert loaded.pdf_parser == "marker"
+
+
+def test_run_setup_passes_ocr_enabled_to_config_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            captured["path"] = path
+
+        def save(
+            self,
+            *,
+            database_url: str,
+            openai_api_key: str = "",
+            gemini_api_key: str = "",
+            ollama_api_key: str = "",
+            ollama_base_url: str = "https://ollama.com",
+            summary_model: str = "openai:gpt-4.1-mini",
+            embedding_model: str = "text-embedding-3-small",
+            embeddings_enabled: bool = False,
+            ocr_enabled: bool = False,
+            pdf_parser: str = "marker",
+        ) -> None:
+            captured["database_url"] = database_url
+            captured["ocr_enabled"] = ocr_enabled
+            captured["pdf_parser"] = pdf_parser
+
+    monkeypatch.setattr("paperbrain.services.setup.ConfigStore", FakeConfigStore)
+    config_path = tmp_path / "paperbrain.conf"
+
+    run_setup(
+        database_url="postgresql://localhost:5432/paperbrain",
+        docling_ocr_enabled=True,
+        pdf_parser="docling",
+        config_path=config_path,
+        test_connections=False,
+    )
+
+    assert captured["path"] == config_path
+    assert captured["database_url"] == "postgresql://localhost:5432/paperbrain"
+    assert captured["ocr_enabled"] is True
+    assert captured["pdf_parser"] == "docling"
 
 
 def test_config_stores_openai_and_gemini_fields(tmp_path: Path) -> None:

@@ -10,7 +10,7 @@ class DummyConfig:
         self.openai_api_key = "sk-test"
         self.embedding_model = "text-embedding-3-small"
         self.embeddings_enabled = True
-        self.docling_ocr_enabled = False
+        self.ocr_enabled = False
         self.pdf_parser = "marker"
         self.gemini_api_key = ""
         self.ollama_api_key = ""
@@ -48,7 +48,7 @@ def test_summary_provider_passes_docling_ocr_setting(monkeypatch):
     class OcrEnabledConfig(DummyConfig):
         def __init__(self):
             super().__init__()
-            self.docling_ocr_enabled = True
+            self.ocr_enabled = True
             self.pdf_parser = "docling"
 
     class OcrEnabledConfigStore:

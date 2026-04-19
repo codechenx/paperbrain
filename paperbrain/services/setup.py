@@ -149,7 +149,7 @@ def run_setup(
         summary_model=summary_model,
         embedding_model=embedding_model,
         embeddings_enabled=embeddings_enabled,
-        docling_ocr_enabled=docling_ocr_enabled,
+        ocr_enabled=docling_ocr_enabled,
         pdf_parser=normalized_pdf_parser,
     )
     return f"Saved configuration to {config_path}"

@@ -187,7 +187,9 @@ def test_worker_main_surfaces_parse_error(monkeypatch: pytest.MonkeyPatch, tmp_p
     parser_worker._worker_main(connection, parser_name="marker", ocr_enabled=False)
 
     assert connection.sent[0][0] == "error"
-    assert "RuntimeError: boom" in connection.sent[0][1]
+    payload = connection.sent[0][1]
+    assert str(pdf_path) in payload
+    assert "RuntimeError: boom" in payload
 
 
 def test_parser_parse_worker_parse_and_close(monkeypatch: pytest.MonkeyPatch) -> None:

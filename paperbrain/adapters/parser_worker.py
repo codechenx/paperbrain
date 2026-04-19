@@ -29,7 +29,7 @@ def _worker_main(connection: Connection, parser_name: str, ocr_enabled: bool) ->
                 else:
                     parsed = parser.parse_pdf(file_path)
             except Exception as exc:
-                connection.send(("error", f"{type(exc).__name__}: {exc}"))
+                connection.send(("error", f"{file_path}: {type(exc).__name__}: {exc}"))
                 continue
             connection.send(("ok", asdict(parsed)))
     finally:

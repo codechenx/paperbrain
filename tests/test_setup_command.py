@@ -42,6 +42,7 @@ def test_run_setup_writes_project_config(tmp_path: Path) -> None:
     assert loaded.embedding_model == "text-embedding-3-small"
     assert loaded.embeddings_enabled is False
     assert loaded.docling_ocr_enabled is False
+    assert loaded.pdf_parser == "marker"
     assert message == f"Saved configuration to {config_path}"
 
 
@@ -381,6 +382,34 @@ def test_cli_setup_accepts_docling_ocr_enabled_flag(monkeypatch: Any) -> None:
 
     assert result.exit_code == 0
     assert calls["docling_ocr_enabled"] is True
+
+
+def test_cli_setup_accepts_pdf_parser_flag(monkeypatch: Any) -> None:
+    calls: dict[str, Any] = {}
+
+    def fake_run_setup(**kwargs: Any) -> str:
+        calls.update(kwargs)
+        return "ok"
+
+    monkeypatch.setattr("paperbrain.cli.run_setup", fake_run_setup)
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "setup",
+            "--url",
+            "postgresql://localhost:5432/paperbrain",
+            "--openai-api-key",
+            "sk-test",
+            "--summary-model",
+            "openai:gpt-4.1-mini",
+            "--pdf-parser",
+            "docling",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls["pdf_parser"] == "docling"
 
 
 def test_cli_setup_reads_openai_key_from_env(monkeypatch: Any) -> None:
@@ -1167,7 +1196,10 @@ def test_cli_ingest_uses_runtime_config_and_real_wiring(monkeypatch: Any, tmp_pa
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
     monkeypatch.setattr("paperbrain.summary_provider.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
-    monkeypatch.setattr("paperbrain.summary_provider.DoclingParser", FakeParser)
+    monkeypatch.setattr(
+        "paperbrain.summary_provider.build_pdf_parser",
+        lambda pdf_parser, *, docling_ocr_enabled: FakeParser(),
+    )
     monkeypatch.setattr("paperbrain.cli.IngestService", FakeIngestService)
     monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
     monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
@@ -1215,6 +1247,7 @@ def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: An
         embedding_model="text-embedding-3-small",
         embeddings_enabled=True,
         docling_ocr_enabled=True,
+        pdf_parser="docling",
     )
     config_path = tmp_path / "config" / "paperbrain.conf"
     pdf_path = tmp_path / "sample.pdf"
@@ -1276,7 +1309,10 @@ def test_cli_ingest_uses_docling_parse_worker_for_docling_parser(monkeypatch: An
     monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
     monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
     monkeypatch.setattr("paperbrain.summary_provider.OpenAIEmbeddingAdapter", FakeEmbeddingAdapter)
-    monkeypatch.setattr("paperbrain.summary_provider.DoclingParser", FakeDoclingParser)
+    monkeypatch.setattr(
+        "paperbrain.summary_provider.build_pdf_parser",
+        lambda pdf_parser, *, docling_ocr_enabled: FakeDoclingParser(ocr_enabled=docling_ocr_enabled),
+    )
     monkeypatch.setattr("paperbrain.cli.DoclingParseWorker", FakeDoclingParseWorker)
     monkeypatch.setattr("paperbrain.cli.IngestService", FakeIngestService)
     monkeypatch.setattr("paperbrain.cli.connect", fake_connect)

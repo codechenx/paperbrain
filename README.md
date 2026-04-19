@@ -3,7 +3,7 @@
 PaperBrain is a Python CLI for building a local scientific knowledge base from PDFs.
 It uses:
 - **PostgreSQL + pgvector** for storage and hybrid retrieval
-- **Docling** for PDF parsing/OCR
+- **Marker (default) or Docling** for PDF parsing
 - **OpenAI** for optional embeddings and OpenAI summaries
 - **Markdown export** for Obsidian-style linked notes
 
@@ -40,7 +40,8 @@ PaperBrain focuses on a **question-centric workflow**:
                │                  [--parse-worker-recycle-every N]
                ▼
       ┌─────────────────────────────┐
-      │ DoclingParser                │
+      │ MarkerParser (default)       │
+      │ or DoclingParser             │
       │ - full text                  │
       │ - first-page metadata clues  │
       │   (authors/journal/year/CA)  │
@@ -172,7 +173,8 @@ This installs PaperBrain in editable mode with all core dependencies:
 - `openai` — OpenAI API client (optional embeddings + OpenAI summaries)
 - `google-genai` — Google Gemini API client
 - `ollama` — Ollama API client
-- `docling` — PDF parsing and OCR
+- `marker-pdf` — default PDF parsing
+- `docling` — optional alternate parser (with optional OCR)
 - `fastapi` + `uvicorn` — Internal web service (if needed)
 
 **Via pip (released versions only):**
@@ -261,6 +263,7 @@ paperbrain setup \
   --url postgresql://<user>:<pass>@localhost:5432/paperbrain \
   --gemini-api-key $GEMINI_API_KEY \
   --summary-model gemini:gemini-2.5-flash \
+  --pdf-parser docling \
   --docling-ocr-enabled
 ```
 
@@ -280,6 +283,7 @@ summary_model = "openai:gpt-4.1-mini"
 embedding_model = "text-embedding-3-small"
 embeddings_enabled = false
 docling_ocr_enabled = false
+pdf_parser = "marker"
 ```
 
 Summary provider is selected from explicit summary model prefixes:
@@ -301,6 +305,13 @@ Docling OCR behavior:
 
 - Default is `docling_ocr_enabled = false`
 - Enable OCR with `--docling-ocr-enabled` for scanned/image-only PDFs
+- OCR is only used when `pdf_parser = "docling"`
+
+PDF parser behavior:
+
+- `pdf_parser` is required in config and must be `marker` or `docling`
+- Default setup value is `pdf_parser = "marker"`
+- Choose Docling with `--pdf-parser docling` when running `paperbrain setup`
 
 ### Initialize schema
 
@@ -320,7 +331,7 @@ paperbrain init --url postgresql://<user>:<pass>@localhost:5432/paperbrain --for
 
 | Command | Purpose | Key options |
 |---|---|---|
-| `paperbrain setup` | Save config and validate connections | `--url`, `--openai-api-key`, `--gemini-api-key`, `--ollama-api-key`, `--ollama-base-url`, `--summary-model`, `--embedding-model`, `--embeddings-enabled/--no-embeddings-enabled`, `--docling-ocr-enabled/--no-docling-ocr-enabled`, `--config-path`, `--test-connections/--no-test-connections` |
+| `paperbrain setup` | Save config and validate connections | `--url`, `--openai-api-key`, `--gemini-api-key`, `--ollama-api-key`, `--ollama-base-url`, `--summary-model`, `--embedding-model`, `--embeddings-enabled/--no-embeddings-enabled`, `--docling-ocr-enabled/--no-docling-ocr-enabled`, `--pdf-parser`, `--config-path`, `--test-connections/--no-test-connections` |
 | `paperbrain init` | Apply DB schema | `--url`, `--force` |
 | `paperbrain ingest PATH` | Parse PDFs and store chunks (embeddings optional) | `--recursive`, `--force-all`, `--start-offset`, `--max-files`, `--parse-worker-recycle-every`, `--config-path` |
 | `paperbrain browse KEYWORD` | Keyword browse card bodies | `--type [paper\|person\|topic\|all]`, `--config-path` |

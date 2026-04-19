@@ -2,8 +2,15 @@ from pathlib import Path
 
 from paperbrain.adapters.ollama_client import OllamaCloudClient
 from paperbrain.adapters.openai_client import OpenAIClient
-from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDINGS_ENABLED, DEFAULT_SUMMARY_MODEL
-from paperbrain.config import ConfigStore, validate_embedding_model_for_schema
+from paperbrain.config import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_EMBEDDINGS_ENABLED,
+    DEFAULT_PDF_PARSER,
+    DEFAULT_SUMMARY_MODEL,
+    ConfigStore,
+    normalize_pdf_parser,
+    validate_embedding_model_for_schema,
+)
 from paperbrain.db import connect
 
 try:  # pragma: no cover - optional dependency
@@ -77,6 +84,7 @@ def run_setup(
     embedding_model: str = DEFAULT_EMBEDDING_MODEL,
     embeddings_enabled: bool = DEFAULT_EMBEDDINGS_ENABLED,
     docling_ocr_enabled: bool = False,
+    pdf_parser: str = DEFAULT_PDF_PARSER,
     config_path: Path = Path.home() / ".config" / "paperbrain" / "paperbrain.conf",
     test_connections: bool = True,
 ) -> str:
@@ -88,6 +96,7 @@ def run_setup(
         raise ValueError("Embedding model must be non-empty")
     if embeddings_enabled:
         validate_embedding_model_for_schema(embedding_model)
+    normalized_pdf_parser = normalize_pdf_parser(pdf_parser)
     # parse provider:model explicitly (always validate prefix)
     parsed = parse_summary_model(summary_model)
     if test_connections:
@@ -141,5 +150,6 @@ def run_setup(
         embedding_model=embedding_model,
         embeddings_enabled=embeddings_enabled,
         docling_ocr_enabled=docling_ocr_enabled,
+        pdf_parser=normalized_pdf_parser,
     )
     return f"Saved configuration to {config_path}"

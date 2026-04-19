@@ -20,12 +20,12 @@ from paperbrain.adapters.llm import GeminiSummaryAdapter, LLMAdapter, OllamaSumm
 from paperbrain.adapters.ollama_client import OllamaCloudClient
 from paperbrain.adapters.openai_client import OpenAIClient
 from paperbrain.config import AppConfig, ConfigStore
-from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_SUMMARY_MODEL
+from paperbrain.config import DEFAULT_EMBEDDING_MODEL, DEFAULT_PDF_PARSER, DEFAULT_SUMMARY_MODEL
 from paperbrain.summary_provider import SummaryProvider
 from paperbrain.db import connect
 from paperbrain.repositories.postgres import PostgresRepo
 from paperbrain.services.export import run_export
-from paperbrain.services.ingest import IngestService
+from paperbrain.services.ingest import IngestService, Parser
 from paperbrain.services.init import run_init
 from paperbrain.services.lint import run_lint
 from paperbrain.services.search import SearchService
@@ -41,7 +41,7 @@ SUPPORTED_CARD_SCOPES = ("all", "paper", "person", "topic")
 @dataclass(slots=True)
 class RuntimeAdapters:
     config: AppConfig
-    parser: DoclingParser
+    parser: Parser
     embeddings: OpenAIEmbeddingAdapter | None
     llm: LLMAdapter
 
@@ -79,6 +79,7 @@ def setup(
         False,
         "--docling-ocr-enabled/--no-docling-ocr-enabled",
     ),
+    pdf_parser: str = typer.Option(DEFAULT_PDF_PARSER, "--pdf-parser"),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
     test_connections: bool = typer.Option(
         True,
@@ -112,6 +113,7 @@ def setup(
         embedding_model=embedding_model,
         embeddings_enabled=embeddings_enabled,
         docling_ocr_enabled=docling_ocr_enabled,
+        pdf_parser=pdf_parser,
         config_path=config_path,
         test_connections=test_connections,
     )

@@ -6,7 +6,9 @@ DEFAULT_SUMMARY_MODEL = "openai:gpt-4.1-mini"
 DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 DEFAULT_EMBEDDINGS_ENABLED = False
 DEFAULT_DOCLING_OCR_ENABLED = False
+DEFAULT_PDF_PARSER = "marker"
 SUPPORTED_1536D_EMBEDDING_MODELS = {DEFAULT_EMBEDDING_MODEL}
+SUPPORTED_PDF_PARSERS = {"marker", "docling"}
 
 
 @dataclass(slots=True)
@@ -17,6 +19,7 @@ class AppConfig:
     embedding_model: str
     embeddings_enabled: bool = DEFAULT_EMBEDDINGS_ENABLED
     docling_ocr_enabled: bool = DEFAULT_DOCLING_OCR_ENABLED
+    pdf_parser: str = DEFAULT_PDF_PARSER
     gemini_api_key: str = ""
     ollama_api_key: str = ""
     ollama_base_url: str = "https://ollama.com"
@@ -39,6 +42,14 @@ def normalize_ollama_base_url(ollama_base_url: str) -> str:
     return normalized
 
 
+def normalize_pdf_parser(pdf_parser: str) -> str:
+    normalized = pdf_parser.strip().lower()
+    if normalized not in SUPPORTED_PDF_PARSERS:
+        supported = ", ".join(sorted(SUPPORTED_PDF_PARSERS))
+        raise ValueError(f"Invalid pdf_parser in configuration file. Allowed values: {supported}")
+    return normalized
+
+
 class ConfigStore:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -54,11 +65,13 @@ class ConfigStore:
         embedding_model: str = DEFAULT_EMBEDDING_MODEL,
         embeddings_enabled: bool = DEFAULT_EMBEDDINGS_ENABLED,
         docling_ocr_enabled: bool = DEFAULT_DOCLING_OCR_ENABLED,
+        pdf_parser: str = DEFAULT_PDF_PARSER,
     ) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if embeddings_enabled:
             validate_embedding_model_for_schema(embedding_model)
         normalized_ollama_base_url = normalize_ollama_base_url(ollama_base_url)
+        normalized_pdf_parser = normalize_pdf_parser(pdf_parser)
         body = (
             "[paperbrain]\n"
             'database_url = "{database_url}"\n'
@@ -70,6 +83,7 @@ class ConfigStore:
             'embedding_model = "{embedding_model}"\n'
             "embeddings_enabled = {embeddings_enabled}\n"
             "docling_ocr_enabled = {docling_ocr_enabled}\n"
+            'pdf_parser = "{pdf_parser}"\n'
         ).format(
             database_url=database_url.replace("\\", "\\\\").replace('"', '\\"'),
             openai_api_key=openai_api_key.replace("\\", "\\\\").replace('"', '\\"'),
@@ -80,6 +94,7 @@ class ConfigStore:
             embedding_model=embedding_model.replace("\\", "\\\\").replace('"', '\\"'),
             embeddings_enabled=str(embeddings_enabled).lower(),
             docling_ocr_enabled=str(docling_ocr_enabled).lower(),
+            pdf_parser=normalized_pdf_parser.replace("\\", "\\\\").replace('"', '\\"'),
         )
         self.path.write_text(body, encoding="utf-8")
         self.path.chmod(0o600)
@@ -123,6 +138,12 @@ class ConfigStore:
         docling_ocr_enabled = section["docling_ocr_enabled"]
         if not isinstance(docling_ocr_enabled, bool):
             raise ValueError("Invalid docling_ocr_enabled in configuration file")
+        if "pdf_parser" not in section:
+            raise ValueError("Missing pdf_parser in configuration file")
+        pdf_parser = section["pdf_parser"]
+        if not isinstance(pdf_parser, str):
+            raise ValueError("Invalid pdf_parser in configuration file")
+        normalized_pdf_parser = normalize_pdf_parser(pdf_parser)
         if embeddings_enabled:
             validate_embedding_model_for_schema(embedding_model)
         return AppConfig(
@@ -132,6 +153,7 @@ class ConfigStore:
             embedding_model=embedding_model,
             embeddings_enabled=embeddings_enabled,
             docling_ocr_enabled=docling_ocr_enabled,
+            pdf_parser=normalized_pdf_parser,
             gemini_api_key=gemini_api_key,
             ollama_api_key=ollama_api_key,
             ollama_base_url=normalized_ollama_base_url,

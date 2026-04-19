@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from paperbrain.adapters.docling import DoclingParser
+from paperbrain.adapters.parser_factory import build_pdf_parser
 from paperbrain.adapters.openai_client import OpenAIClient
 from paperbrain.adapters.llm import LLMAdapter, GeminiSummaryAdapter, OllamaSummaryAdapter, OpenAISummaryAdapter
 from paperbrain.adapters.gemini_client import GeminiClient
@@ -38,7 +38,10 @@ class SummaryProvider:
         self.parsed = parse_summary_model(self.summary_model)
         self.openai_client = self._build_openai_client()
         self.llm = self._build_llm()
-        self.parser = DoclingParser(ocr_enabled=self.config.docling_ocr_enabled)
+        self.parser = build_pdf_parser(
+            self.config.pdf_parser,
+            docling_ocr_enabled=self.config.docling_ocr_enabled,
+        )
         self.embeddings = self._build_embeddings()
 
     def _build_openai_client(self) -> OpenAIClient | None:

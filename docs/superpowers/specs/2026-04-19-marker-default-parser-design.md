@@ -14,7 +14,7 @@ Add persistent parser selection in setup/config, default to Marker, keep Docling
 2. Marker is the **default parser**.
 3. If Marker is selected but unavailable, ingest must **fail fast** with a clear install error.
 4. Marker output must keep metadata behavior aligned with current Docling heuristics.
-5. Existing config files missing parser field default to Marker on load.
+5. Config files missing `pdf_parser` are invalid and must fail with a clear error.
 
 ## Approaches Considered
 
@@ -39,7 +39,7 @@ Add persistent parser selection in setup/config, default to Marker, keep Docling
   - Add `DEFAULT_PDF_PARSER = "marker"` and allowed parser values.
   - Extend `AppConfig` with `pdf_parser: str`.
   - Persist `pdf_parser` in `ConfigStore.save`.
-  - Load `pdf_parser` with default Marker when missing; validate allowed values.
+  - Load requires explicit `pdf_parser`; validate allowed values.
 
 - `paperbrain/services/setup.py`
   - Add `pdf_parser` argument to `run_setup`.
@@ -67,7 +67,7 @@ Add persistent parser selection in setup/config, default to Marker, keep Docling
   - Raises explicit error for invalid parser values.
 
 - Tests
-  - `tests/test_config.py`: save/load parser value, missing parser defaults to marker, invalid parser rejected.
+  - `tests/test_config.py`: save/load parser value, missing parser raises error, invalid parser rejected.
   - `tests/test_setup_command.py`: setup flag wiring and runtime parser selection.
   - `tests/test_summary_provider.py`: parser factory integration and provider wiring.
   - `tests/test_ingest_service.py` or dedicated adapter tests: Marker dependency-missing error and normalized output shape.
@@ -78,7 +78,7 @@ Add persistent parser selection in setup/config, default to Marker, keep Docling
 ## Data Flow
 
 1. `paperbrain setup --pdf-parser marker|docling` writes parser choice to config.
-2. Runtime loads config with `pdf_parser`; missing field defaults to `marker`.
+2. Runtime loads config with explicit `pdf_parser`; missing field fails with validation error.
 3. Parser factory returns `MarkerParser` or `DoclingParser`.
 4. Ingest service remains parser-agnostic and consumes `Parser` protocol.
 
@@ -90,13 +90,13 @@ Add persistent parser selection in setup/config, default to Marker, keep Docling
 
 ## Backward Compatibility
 
-- Existing config files without `pdf_parser` remain valid and default to Marker.
-- Ingest CLI behavior remains the same except parser backend is now configurable and defaults to Marker.
+- Existing config files without `pdf_parser` are invalid and require setup refresh or manual update.
+- Ingest CLI behavior remains the same except parser backend is now configurable and defaults to Marker in setup-generated configs.
 
 ## Testing Strategy
 
 1. **Config contract**
-   - Parser defaulting and validation.
+   - Required parser field and validation.
 2. **Setup/CLI wiring**
    - Parser flag accepted and persisted.
 3. **Runtime selection**

@@ -114,6 +114,19 @@ def test_save_normalizes_ollama_base_url(tmp_path: Path) -> None:
     assert loaded.ollama_base_url == "https://ollama.local/base"
 
 
+def test_save_normalizes_ollama_base_url_strips_api_suffix(tmp_path: Path) -> None:
+    config_path = tmp_path / "paperbrain.conf"
+    store = ConfigStore(config_path)
+    store.save(
+        database_url="postgresql://localhost:5432/paperbrain",
+        ollama_base_url="https://ollama.com/api/",
+    )
+
+    loaded = store.load()
+
+    assert loaded.ollama_base_url == "https://ollama.com"
+
+
 def test_save_rejects_blank_ollama_base_url(tmp_path: Path) -> None:
     config_path = tmp_path / "paperbrain.conf"
     store = ConfigStore(config_path)

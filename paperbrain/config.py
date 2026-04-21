@@ -39,6 +39,11 @@ def normalize_ollama_base_url(ollama_base_url: str) -> str:
     normalized = ollama_base_url.strip()
     if not normalized:
         raise ValueError("Missing non-empty ollama_base_url in configuration file")
+    normalized = normalized.rstrip("/")
+    if normalized.lower().endswith("/api"):
+        normalized = normalized[:-4].rstrip("/")
+    if not normalized:
+        raise ValueError("Missing non-empty ollama_base_url in configuration file")
     return normalized
 
 

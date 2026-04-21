@@ -219,6 +219,14 @@ def summarize(
     typer.echo(f"Summarized cards: papers={stats.paper_cards} people={stats.person_cards} topics={stats.topic_cards}")
 
 
+@app.command("summary", hidden=True)
+def summary_alias(
+    card_scope: str | None = typer.Option(None, "--card-scope"),
+    config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
+) -> None:
+    summarize(card_scope=card_scope, config_path=config_path)
+
+
 @app.command()
 def lint(config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path")) -> None:
     config = ConfigStore(config_path).load()

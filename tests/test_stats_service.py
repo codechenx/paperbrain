@@ -87,4 +87,6 @@ def test_cli_stats_invokes_run_stats(monkeypatch: Any) -> None:
     assert "papers=5" in result.output
     assert "authors=7" in result.output
     assert "topics=9" in result.output
+    assert "authors=" not in result.output
+    assert "topics=" not in result.output
     assert captured["database_url"] == "postgresql://localhost:5432/paperbrain"

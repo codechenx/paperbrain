@@ -11,16 +11,19 @@ class FakeStatsRepo:
     def count_papers(self) -> int:
         return 2
 
-    def count_authors(self) -> int:
+    def count_paper_cards(self) -> int:
         return 3
 
-    def count_topics(self) -> int:
+    def count_person_cards(self) -> int:
         return 4
+
+    def count_topic_cards(self) -> int:
+        return 5
 
 
 def test_stats_service_collect_returns_counts() -> None:
     stats = StatsService(repo=FakeStatsRepo()).collect()
-    assert stats == CorpusStats(papers=2, authors=3, topics=4)
+    assert stats == CorpusStats(papers=2, paper_cards=3, person_cards=4, topic_cards=5)
 
 
 def test_run_stats_uses_database_connection(monkeypatch: Any) -> None:
@@ -57,8 +60,10 @@ def test_run_stats_uses_database_connection(monkeypatch: Any) -> None:
 
     stats = run_stats("postgresql://localhost:5432/paperbrain")
 
-    assert stats == CorpusStats(papers=1, authors=2, topics=1)
-    assert len(executed) == 3
+    assert stats == CorpusStats(papers=1, paper_cards=1, person_cards=1, topic_cards=1)
+    assert "SELECT COUNT(*) FROM paper_cards;" in executed
+    assert "SELECT COUNT(*) FROM person_cards;" in executed
+    assert "SELECT COUNT(*) FROM topic_cards;" in executed
 
 
 def test_cli_stats_invokes_run_stats(monkeypatch: Any) -> None:
@@ -66,7 +71,7 @@ def test_cli_stats_invokes_run_stats(monkeypatch: Any) -> None:
 
     def fake_run_stats(database_url: str) -> CorpusStats:
         captured["database_url"] = database_url
-        return CorpusStats(papers=5, authors=7, topics=9)
+        return CorpusStats(papers=5, paper_cards=7, person_cards=11, topic_cards=13)
 
     class FakeConfig:
         database_url = "postgresql://localhost:5432/paperbrain"
@@ -85,8 +90,9 @@ def test_cli_stats_invokes_run_stats(monkeypatch: Any) -> None:
 
     assert result.exit_code == 0
     assert "papers=5" in result.output
-    assert "authors=7" in result.output
-    assert "topics=9" in result.output
+    assert "paper_cards=7" in result.output
+    assert "person_cards=11" in result.output
+    assert "topic_cards=13" in result.output
     assert "authors=" not in result.output
     assert "topics=" not in result.output
     assert captured["database_url"] == "postgresql://localhost:5432/paperbrain"

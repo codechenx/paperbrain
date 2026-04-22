@@ -238,7 +238,13 @@ def lint(config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"))
 def stats(config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path")) -> None:
     config = ConfigStore(config_path).load()
     corpus = run_stats(config.database_url)
-    typer.echo(f"Corpus stats: papers={corpus.papers} authors={corpus.authors} topics={corpus.topics}")
+    typer.echo(
+        "Corpus stats: "
+        f"papers={corpus.papers} "
+        f"paper_cards={corpus.paper_cards} "
+        f"person_cards={corpus.person_cards} "
+        f"topic_cards={corpus.topic_cards}"
+    )
 
 
 @app.command()

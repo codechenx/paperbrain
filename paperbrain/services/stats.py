@@ -1,4 +1,3 @@
-import json
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -8,18 +7,22 @@ from paperbrain.db import connect
 @dataclass(slots=True)
 class CorpusStats:
     papers: int
-    authors: int
-    topics: int
+    paper_cards: int
+    person_cards: int
+    topic_cards: int
 
 
 class StatsRepository(Protocol):
     def count_papers(self) -> int:
         ...
 
-    def count_authors(self) -> int:
+    def count_paper_cards(self) -> int:
         ...
 
-    def count_topics(self) -> int:
+    def count_person_cards(self) -> int:
+        ...
+
+    def count_topic_cards(self) -> int:
         ...
 
 
@@ -30,8 +33,9 @@ class StatsService:
     def collect(self) -> CorpusStats:
         return CorpusStats(
             papers=self.repo.count_papers(),
-            authors=self.repo.count_authors(),
-            topics=self.repo.count_topics(),
+            paper_cards=self.repo.count_paper_cards(),
+            person_cards=self.repo.count_person_cards(),
+            topic_cards=self.repo.count_topic_cards(),
         )
 
 
@@ -45,26 +49,19 @@ class DatabaseStatsRepository:
             row = cursor.fetchone()
         return int(row[0]) if row is not None else 0
 
-    def count_authors(self) -> int:
+    def count_paper_cards(self) -> int:
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT authors FROM papers;")
-            rows = cursor.fetchall()
+            cursor.execute("SELECT COUNT(*) FROM paper_cards;")
+            row = cursor.fetchone()
+        return int(row[0]) if row is not None else 0
 
-        authors: set[str] = set()
-        for (raw_authors,) in rows:
-            if isinstance(raw_authors, list):
-                values = raw_authors
-            else:
-                try:
-                    values = json.loads(str(raw_authors))
-                except json.JSONDecodeError:
-                    values = []
-            if isinstance(values, list):
-                authors.update(str(value).strip() for value in values if str(value).strip())
+    def count_person_cards(self) -> int:
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM person_cards;")
+            row = cursor.fetchone()
+        return int(row[0]) if row is not None else 0
 
-        return len(authors)
-
-    def count_topics(self) -> int:
+    def count_topic_cards(self) -> int:
         with self.connection.cursor() as cursor:
             cursor.execute("SELECT COUNT(*) FROM topic_cards;")
             row = cursor.fetchone()

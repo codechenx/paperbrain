@@ -74,7 +74,7 @@ def test_cli_stats_invokes_run_stats(monkeypatch: Any) -> None:
 
     def fake_run_stats(database_url: str) -> CorpusStats:
         captured["database_url"] = database_url
-        return CorpusStats(papers=5, paper_cards=7, person_cards=9, topic_cards=11)
+        return CorpusStats(papers=5, paper_cards=7, person_cards=11, topic_cards=13)
 
     class FakeConfig:
         database_url = "postgresql://localhost:5432/paperbrain"
@@ -94,6 +94,8 @@ def test_cli_stats_invokes_run_stats(monkeypatch: Any) -> None:
     assert result.exit_code == 0
     assert "papers=5" in result.output
     assert "paper_cards=7" in result.output
-    assert "person_cards=9" in result.output
-    assert "topic_cards=11" in result.output
+    assert "person_cards=11" in result.output
+    assert "topic_cards=13" in result.output
+    assert "authors=" not in result.output
+    assert "topics=" not in result.output
     assert captured["database_url"] == "postgresql://localhost:5432/paperbrain"

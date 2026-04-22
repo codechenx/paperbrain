@@ -202,6 +202,7 @@ def search(
 @app.command()
 def summarize(
     card_scope: str | None = typer.Option(None, "--card-scope"),
+    limit: int | None = typer.Option(1, "--limit", help="Limit number of cards to process (default: 1)"),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
 ) -> None:
     normalized_scope = card_scope.strip().lower() if card_scope is not None else None
@@ -215,16 +216,8 @@ def summarize(
     runtime = build_runtime(config_path)
     with repo_from_url(runtime.config.database_url) as repo:
         summarize_service = SummarizeService(repo=repo, llm=runtime.llm)
-        stats = summarize_service.run(card_scope=normalized_scope)
+        stats = summarize_service.run(card_scope=normalized_scope, limit=limit)
     typer.echo(f"Summarized cards: papers={stats.paper_cards} people={stats.person_cards} topics={stats.topic_cards}")
-
-
-@app.command("summary", hidden=True)
-def summary_alias(
-    card_scope: str | None = typer.Option(None, "--card-scope"),
-    config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
-) -> None:
-    summarize(card_scope=card_scope, config_path=config_path)
 
 
 @app.command()

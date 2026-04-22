@@ -1437,8 +1437,9 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
             calls["repo"] = repo
             calls["llm_seen"] = isinstance(llm, FakeSummaryAdapter)
 
-        def run(self, *, card_scope: str | None) -> SummaryStats:
+        def run(self, *, card_scope: str | None, limit: int | None = None) -> SummaryStats:
             calls["run_card_scope"] = card_scope
+            calls["run_limit"] = limit
             return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
 
     @contextmanager
@@ -1469,73 +1470,15 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
     assert calls["repo"] is fake_repo
     assert calls["llm_seen"] is True
     assert calls["run_card_scope"] is None
+    assert calls["run_limit"] == 1
 
 
-def test_cli_summary_alias_uses_runtime_config_and_reports_counts(
-    monkeypatch: Any, tmp_path: Path
-) -> None:
-    calls: dict[str, Any] = {}
-    config_path = tmp_path / "config" / "paperbrain.conf"
-    config = AppConfig(
-        database_url="postgresql://localhost:5432/paperbrain",
-        openai_api_key="sk-runtime",
-        summary_model="openai:gpt-4.1-mini",
-        embedding_model="text-embedding-3-small",
-    )
-
-    class FakeConfigStore:
-        def __init__(self, path: Path) -> None:
-            calls["config_path"] = path
-
-        def load(self) -> AppConfig:
-            return config
-
-    class FakeOpenAIClient:
-        def __init__(self, api_key: str) -> None:
-            calls["api_key"] = api_key
-
-    class FakeSummaryAdapter:
-        def __init__(self, *, client: Any, model: str) -> None:
-            calls["summary_model"] = model
-            calls["summary_client_seen"] = isinstance(client, FakeOpenAIClient)
-
-    class FakeSummarizeService:
-        def __init__(self, *, repo: Any, llm: Any) -> None:
-            calls["repo"] = repo
-            calls["llm_seen"] = isinstance(llm, FakeSummaryAdapter)
-
-        def run(self, *, card_scope: str | None) -> SummaryStats:
-            calls["run_card_scope"] = card_scope
-            return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
-
-    @contextmanager
-    def fake_connect(database_url: str, *, autocommit: bool = False) -> Iterator[str]:
-        calls["connect"] = (database_url, autocommit)
-        yield "fake-connection"
-
-    fake_repo = object()
-
-    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
-    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
-    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
-    monkeypatch.setattr("paperbrain.summary_provider.OpenAISummaryAdapter", FakeSummaryAdapter)
-    monkeypatch.setattr("paperbrain.cli.SummarizeService", FakeSummarizeService)
-    monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
-    monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
-
+def test_cli_summary_alias_is_not_available() -> None:
     runner = CliRunner()
-    result = runner.invoke(app, ["summary", "--config-path", str(config_path)])
+    result = runner.invoke(app, ["summary"])
 
-    assert result.exit_code == 0
-    assert "Summarized cards: papers=3 people=2 topics=1" in result.output
-    assert calls["config_path"] == config_path
-    assert calls["api_key"] == "sk-runtime"
-    assert calls["summary_model"] == "gpt-4.1-mini"
-    assert calls["summary_client_seen"] is True
-    assert calls["connect"] == ("postgresql://localhost:5432/paperbrain", False)
-    assert calls["repo"] is fake_repo
-    assert calls["llm_seen"] is True
-    assert calls["run_card_scope"] is None
+    assert result.exit_code != 0
+    assert "No such command 'summary'" in result.output
 
 
 def test_cli_summarize_rejects_invalid_card_scope() -> None:
@@ -1601,8 +1544,9 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
             calls["repo"] = repo
             calls["llm_seen"] = isinstance(llm, FakeGeminiSummaryAdapter)
 
-        def run(self, *, card_scope: str | None) -> SummaryStats:
+        def run(self, *, card_scope: str | None, limit: int | None = None) -> SummaryStats:
             calls["run_card_scope"] = card_scope
+            calls["run_limit"] = limit
             return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
 
     @contextmanager
@@ -1643,6 +1587,7 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
     assert calls["repo"] is fake_repo
     assert calls["llm_seen"] is True
     assert calls["run_card_scope"] == "all"
+    assert calls["run_limit"] == 1
 
 
 def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
@@ -1690,8 +1635,9 @@ def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
             calls["repo"] = repo
             calls["llm_seen"] = isinstance(llm, FakeOllamaSummaryAdapter)
 
-        def run(self, *, card_scope: str | None) -> SummaryStats:
+        def run(self, *, card_scope: str | None, limit: int | None = None) -> SummaryStats:
             calls["run_card_scope"] = card_scope
+            calls["run_limit"] = limit
             return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
 
     @contextmanager
@@ -1732,6 +1678,7 @@ def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
     assert calls["repo"] is fake_repo
     assert calls["llm_seen"] is True
     assert calls["run_card_scope"] == "all"
+    assert calls["run_limit"] == 1
 
 def test_runtime_prefixed_provider_positive_paths(monkeypatch: Any, tmp_path: Path) -> None:
     # openai positive path

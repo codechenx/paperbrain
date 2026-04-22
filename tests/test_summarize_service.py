@@ -144,6 +144,122 @@ class FakeLLM:
         ]
 
 
+def build_summary_paper(slug: str) -> FakePaper:
+    return FakePaper(
+        slug=slug,
+        title=f"Title for {slug}",
+        journal="Journal",
+        year=2024,
+        authors=["Author"],
+        corresponding_authors=["Author <author@example.org>"],
+        full_text=f"full text for {slug}",
+    )
+
+
+class FakeSummaryRepo:
+    def __init__(self) -> None:
+        self.papers_for_summary: list[FakePaper] = []
+        self.paper_cards_existing: list[dict] = []
+        self.paper_cards_upserted: list[dict] = []
+        self.person_cards_upserted: list[dict] = []
+        self.topic_cards_upserted: list[dict] = []
+
+    def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+        _ = force_all
+        upserted_slugs = {str(card.get("slug", "")).strip() for card in self.paper_cards_upserted}
+        return [paper for paper in self.papers_for_summary if paper.slug not in upserted_slugs]
+
+    def upsert_paper_card(self, card: dict) -> None:
+        self.paper_cards_upserted.append(copy.deepcopy(card))
+
+    def list_person_slugs_linked_to_paper_slugs(self, paper_slugs: list[str]) -> list[str]:
+        _ = paper_slugs
+        return []
+
+    def list_topic_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+        _ = person_slugs
+        return []
+
+    def list_paper_slugs_linked_to_person_slugs(self, person_slugs: list[str]) -> list[str]:
+        _ = person_slugs
+        return []
+
+    def list_person_slugs_linked_to_topic_slugs(self, topic_slugs: list[str]) -> list[str]:
+        _ = topic_slugs
+        return []
+
+    def fetch_paper_cards_by_slugs(self, paper_slugs: list[str]) -> list[dict]:
+        all_cards = self.fetch_all_paper_cards()
+        by_slug = {str(card.get("slug", "")).strip(): copy.deepcopy(card) for card in all_cards}
+        return [by_slug[slug] for slug in paper_slugs if slug in by_slug]
+
+    def fetch_all_paper_cards(self) -> list[dict]:
+        return copy.deepcopy(self.paper_cards_existing + self.paper_cards_upserted)
+
+    def list_all_person_slugs(self) -> list[str]:
+        return []
+
+    def fetch_person_cards_by_slugs(self, person_slugs: list[str]) -> list[dict]:
+        _ = person_slugs
+        return []
+
+    def upsert_person_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+        _ = replace_existing
+        self.person_cards_upserted = copy.deepcopy(cards)
+
+    def upsert_topic_cards(self, cards: list[dict], *, replace_existing: bool = False) -> None:
+        _ = replace_existing
+        self.topic_cards_upserted = copy.deepcopy(cards)
+
+
+class FakeSummaryLLM:
+    def __init__(self) -> None:
+        self.derive_person_calls = 0
+        self.derive_topic_calls = 0
+        self.call_order: list[str] = []
+        self.person_inputs: list[list[str]] = []
+
+    def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+        _ = paper_text
+        return {
+            "slug": metadata["slug"],
+            "type": "article",
+            "paper_type": "article",
+            "title": metadata["title"],
+            "summary": "summary",
+            "corresponding_authors": metadata["corresponding_authors"],
+        }
+
+    def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+        self.derive_person_calls += 1
+        self.call_order.append("person")
+        self.person_inputs.append([str(card.get("slug", "")).strip() for card in paper_cards])
+        if not paper_cards:
+            return []
+        return [
+            {
+                "slug": f"people/{str(card.get('slug', '')).split('/')[-1]}",
+                "type": "person",
+                "related_papers": [card["slug"]],
+            }
+            for card in paper_cards
+        ]
+
+    def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+        self.derive_topic_calls += 1
+        self.call_order.append("topic")
+        if not person_cards:
+            return []
+        return [
+            {
+                "slug": "topics/generated-topic",
+                "type": "topic",
+                "topic": "Generated Topic",
+                "related_people": [card["slug"] for card in person_cards],
+            }
+        ]
+
+
 class FakeCursor:
     def __init__(self, connection: "FakeConnection") -> None:
         self.connection = connection
@@ -228,6 +344,53 @@ def test_summarize_card_scope_all_maps_to_force_all() -> None:
 
     assert repo.force_all_seen is True
     assert result.paper_cards == 2
+
+
+def test_summarize_default_skips_person_topic_when_pending_papers_exist() -> None:
+    repo = FakeSummaryRepo()
+    repo.paper_cards_existing = [{"slug": "papers/existing", "type": "article", "paper_type": "article"}]
+    repo.papers_for_summary = [build_summary_paper(slug="papers/new-1"), build_summary_paper(slug="papers/new-2")]
+    llm = FakeSummaryLLM()
+    service = SummarizeService(repo=repo, llm=llm)
+
+    stats = service.run(limit=1)
+
+    assert stats.paper_cards == 1
+    assert stats.person_cards == 0
+    assert stats.topic_cards == 0
+    assert llm.derive_person_calls == 0
+    assert llm.derive_topic_calls == 0
+
+
+def test_summarize_all_skips_downstream_when_pending_papers_exist() -> None:
+    repo = FakeSummaryRepo()
+    repo.papers_for_summary = [build_summary_paper(slug="papers/new-1"), build_summary_paper(slug="papers/new-2")]
+    llm = FakeSummaryLLM()
+    service = SummarizeService(repo=repo, llm=llm)
+
+    stats = service.run(card_scope="all", limit=1)
+
+    assert stats.paper_cards == 1
+    assert stats.person_cards == 0
+    assert stats.topic_cards == 0
+    assert llm.derive_person_calls == 0
+    assert llm.derive_topic_calls == 0
+
+
+def test_summarize_all_runs_person_then_topic_after_papers_complete() -> None:
+    repo = FakeSummaryRepo()
+    repo.papers_for_summary = []
+    repo.paper_cards_existing = [{"slug": "papers/p-1", "type": "article", "paper_type": "article"}]
+    llm = FakeSummaryLLM()
+    service = SummarizeService(repo=repo, llm=llm)
+
+    stats = service.run(card_scope="all")
+
+    assert stats.paper_cards == 0
+    assert stats.person_cards == 1
+    assert stats.topic_cards == 1
+    assert llm.person_inputs == [["papers/p-1"]]
+    assert llm.call_order == ["person", "topic"]
 
 
 def test_summarize_all_raises_value_error_when_topics_empty_for_existing_people() -> None:

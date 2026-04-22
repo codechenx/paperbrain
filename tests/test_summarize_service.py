@@ -22,6 +22,7 @@ class FakePaper:
 class FakeRepo:
     def __init__(self) -> None:
         self.force_all_seen: bool | None = None
+        self.force_all_calls: list[bool] = []
         self.paper_cards: list[dict] = []
         self.person_cards: list[dict] = []
         self.topic_cards: list[dict] = []
@@ -30,6 +31,7 @@ class FakeRepo:
 
     def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
         self.force_all_seen = force_all
+        self.force_all_calls.append(force_all)
         return [
             FakePaper(
                 slug="papers/chen-p53-nature-2024-abc123",
@@ -342,7 +344,7 @@ def test_summarize_card_scope_all_maps_to_force_all() -> None:
 
     result = SummarizeService(repo=repo, llm=llm).run(card_scope="all")
 
-    assert repo.force_all_seen is True
+    assert repo.force_all_calls[0] is True
     assert result.paper_cards == 2
 
 
@@ -390,6 +392,33 @@ def test_summarize_all_runs_person_then_topic_after_papers_complete() -> None:
     assert stats.person_cards == 1
     assert stats.topic_cards == 1
     assert llm.person_inputs == [["papers/p-1"]]
+    assert llm.call_order == ["person", "topic"]
+
+
+def test_summarize_all_uses_unsummarized_gate_when_force_all_lists_everything() -> None:
+    class ForceAllRepo(FakeSummaryRepo):
+        def __init__(self) -> None:
+            super().__init__()
+            self.all_papers: list[FakePaper] = []
+
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            upserted_slugs = {str(card.get("slug", "")).strip() for card in self.paper_cards_upserted}
+            if force_all:
+                return [paper for paper in self.all_papers if paper.slug not in upserted_slugs]
+            return [paper for paper in self.papers_for_summary if paper.slug not in upserted_slugs]
+
+    repo = ForceAllRepo()
+    repo.all_papers = [build_summary_paper("papers/new-1"), build_summary_paper("papers/existing-1")]
+    repo.papers_for_summary = [build_summary_paper("papers/new-1")]
+    repo.paper_cards_existing = [{"slug": "papers/existing-1", "type": "article", "paper_type": "article"}]
+    llm = FakeSummaryLLM()
+    service = SummarizeService(repo=repo, llm=llm)
+
+    stats = service.run(card_scope="all", limit=1)
+
+    assert stats.paper_cards == 1
+    assert stats.person_cards == 2
+    assert stats.topic_cards == 1
     assert llm.call_order == ["person", "topic"]
 
 

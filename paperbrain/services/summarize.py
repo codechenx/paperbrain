@@ -131,7 +131,7 @@ class SummarizeService:
 
         if normalized_scope == "all":
             paper_cards = self._summarize_and_upsert_papers(force_all=True, limit=limit)
-            if self._has_pending_papers(force_all=True, exclude_slugs=self._card_slugs(paper_cards)):
+            if self._has_pending_papers(force_all=False, exclude_slugs=self._card_slugs(paper_cards)):
                 return SummaryStats(paper_cards=len(paper_cards), person_cards=0, topic_cards=0)
             source_article_cards = self._article_cards(self._paper_cards_for_all_scope(paper_cards))
             person_cards = self.llm.derive_person_cards(source_article_cards)

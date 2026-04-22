@@ -131,7 +131,10 @@ class SummarizeService:
 
         if normalized_scope == "all":
             paper_cards = self._summarize_and_upsert_papers(force_all=True, limit=limit)
-            person_cards = self.llm.derive_person_cards(self._article_cards(paper_cards))
+            if self._has_pending_papers(force_all=True, exclude_slugs=self._card_slugs(paper_cards)):
+                return SummaryStats(paper_cards=len(paper_cards), person_cards=0, topic_cards=0)
+            source_article_cards = self._article_cards(self._paper_cards_for_all_scope(paper_cards))
+            person_cards = self.llm.derive_person_cards(source_article_cards)
             topic_cards = self.llm.derive_topic_cards(person_cards)
             if person_cards:
                 _apply_person_focus_areas(person_cards, topic_cards)
@@ -144,6 +147,8 @@ class SummarizeService:
             )
 
         paper_cards = self._summarize_and_upsert_papers(force_all=False, limit=limit)
+        if self._has_pending_papers(force_all=False, exclude_slugs=self._card_slugs(paper_cards)):
+            return SummaryStats(paper_cards=len(paper_cards), person_cards=0, topic_cards=0)
         if not paper_cards:
             return SummaryStats(paper_cards=0, person_cards=0, topic_cards=0)
         new_paper_slugs = self._card_slugs(paper_cards)
@@ -232,8 +237,23 @@ class SummarizeService:
             paper_cards.append(card)
         return paper_cards
 
+    def _has_pending_papers(self, *, force_all: bool, exclude_slugs: list[str] | None = None) -> bool:
+        excluded = set(exclude_slugs or [])
+        for paper in self.repo.list_papers_for_summary(force_all):
+            slug = str(getattr(paper, "slug", "")).strip()
+            if slug and slug in excluded:
+                continue
+            return True
+        return False
+
     def _fetch_all_paper_cards(self) -> list[dict]:
         return self.repo.fetch_all_paper_cards()
+
+    def _paper_cards_for_all_scope(self, paper_cards: list[dict]) -> list[dict]:
+        fetch_all = getattr(self.repo, "fetch_all_paper_cards", None)
+        if callable(fetch_all):
+            return fetch_all()
+        return paper_cards
 
     def _fetch_all_person_cards(self) -> list[dict]:
         person_slugs = self.repo.list_all_person_slugs()

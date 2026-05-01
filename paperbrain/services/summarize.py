@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Protocol
 
 from paperbrain.models import SummaryStats
@@ -229,12 +229,17 @@ class SummarizeService:
         papers = self.repo.list_papers_for_summary(force_all)
         if not papers:
             return []
+        indexed_results: list[dict | None] = [None] * len(papers)
         with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-            futures = [executor.submit(self._summarize_paper, paper) for paper in papers]
-            paper_cards = [future.result() for future in futures]
-        for card in paper_cards:
-            self.repo.upsert_paper_card(card)
-        return paper_cards
+            indexed_futures = {
+                executor.submit(self._summarize_paper, paper): index for index, paper in enumerate(papers)
+            }
+            for future in as_completed(indexed_futures):
+                index = indexed_futures[future]
+                card = future.result()
+                indexed_results[index] = card
+                self.repo.upsert_paper_card(card)
+        return [card for card in indexed_results if card is not None]
 
     def _summarize_paper(self, paper: object) -> dict:
         metadata = {

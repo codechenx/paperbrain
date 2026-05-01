@@ -360,12 +360,57 @@ def test_summarize_default_processes_all_eligible_papers_in_single_run() -> None
 
     stats = service.run(max_concurrency=2)
 
-    assert [card["slug"] for card in repo.paper_cards_upserted] == [
+    assert sorted(card["slug"] for card in repo.paper_cards_upserted) == [
         "papers/new-1",
         "papers/new-2",
         "papers/new-3",
     ]
     assert stats.paper_cards == 3
+
+
+def test_summarize_upserts_completed_cards_before_later_concurrent_failure() -> None:
+    from threading import Event
+
+    class PartialProgressRepo(FakeSummaryRepo):
+        def __init__(self) -> None:
+            super().__init__()
+            self.papers_for_summary = [
+                build_summary_paper(slug="papers/success"),
+                build_summary_paper(slug="papers/fail"),
+            ]
+
+    class PartialProgressLLM:
+        def __init__(self) -> None:
+            self._success_done = Event()
+
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            if metadata["slug"] == "papers/success":
+                self._success_done.set()
+                return {
+                    "slug": metadata["slug"],
+                    "type": "article",
+                    "paper_type": "article",
+                    "title": metadata["title"],
+                }
+            self._success_done.wait(timeout=1.0)
+            raise RuntimeError("boom")
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            _ = paper_cards
+            raise AssertionError("person derivation must not run after summarize failure")
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            _ = person_cards
+            raise AssertionError("topic derivation must not run after summarize failure")
+
+    repo = PartialProgressRepo()
+    llm = PartialProgressLLM()
+
+    with pytest.raises(RuntimeError, match="boom"):
+        SummarizeService(repo=repo, llm=llm).run(max_concurrency=2)
+
+    assert [card["slug"] for card in repo.paper_cards_upserted] == ["papers/success"]
 
 
 def test_summarize_all_skips_downstream_when_pending_papers_exist() -> None:

@@ -202,7 +202,11 @@ def search(
 @app.command()
 def summarize(
     card_scope: str | None = typer.Option(None, "--card-scope"),
-    limit: int | None = typer.Option(1, "--limit", help="Limit number of cards to process (default: 1)"),
+    max_concurrency: int = typer.Option(
+        1,
+        "--max-concurrency",
+        help="Maximum number of papers to summarize concurrently",
+    ),
     config_path: Path = typer.Option(DEFAULT_CONFIG_PATH, "--config-path"),
 ) -> None:
     normalized_scope = card_scope.strip().lower() if card_scope is not None else None
@@ -212,11 +216,16 @@ def summarize(
             f"Allowed values: {allowed_values}",
             param_hint="'--card-scope'",
         )
+    if max_concurrency <= 0:
+        raise typer.BadParameter(
+            "Must be a positive integer",
+            param_hint="'--max-concurrency'",
+        )
 
     runtime = build_runtime(config_path)
     with repo_from_url(runtime.config.database_url) as repo:
         summarize_service = SummarizeService(repo=repo, llm=runtime.llm)
-        stats = summarize_service.run(card_scope=normalized_scope, limit=limit)
+        stats = summarize_service.run(card_scope=normalized_scope, max_concurrency=max_concurrency)
     typer.echo(f"Summarized cards: papers={stats.paper_cards} people={stats.person_cards} topics={stats.topic_cards}")
 
 

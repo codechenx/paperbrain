@@ -1535,6 +1535,16 @@ def test_cli_summarize_passes_max_concurrency(monkeypatch: Any, tmp_path: Path) 
     assert calls["run_max_concurrency"] == 3
 
 
+def test_cli_summarize_help_shows_canonical_options() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["summarize", "--help"])
+
+    assert result.exit_code == 0
+    assert "--card-scope" in result.output
+    assert "--max-concurrency" in result.output
+    assert "--config-path" in result.output
+
+
 def test_cli_summarize_rejects_invalid_card_scope() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["summarize", "--card-scope", "invalid"])

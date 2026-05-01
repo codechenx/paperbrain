@@ -348,29 +348,44 @@ def test_summarize_card_scope_all_maps_to_force_all() -> None:
     assert result.paper_cards == 2
 
 
-def test_summarize_default_skips_person_topic_when_pending_papers_exist() -> None:
+def test_summarize_default_processes_all_eligible_papers_in_single_run() -> None:
     repo = FakeSummaryRepo()
-    repo.paper_cards_existing = [{"slug": "papers/existing", "type": "article", "paper_type": "article"}]
-    repo.papers_for_summary = [build_summary_paper(slug="papers/new-1"), build_summary_paper(slug="papers/new-2")]
+    repo.papers_for_summary = [
+        build_summary_paper(slug="papers/new-1"),
+        build_summary_paper(slug="papers/new-2"),
+        build_summary_paper(slug="papers/new-3"),
+    ]
     llm = FakeSummaryLLM()
     service = SummarizeService(repo=repo, llm=llm)
 
-    stats = service.run(limit=1)
+    stats = service.run(max_concurrency=2)
 
-    assert stats.paper_cards == 1
-    assert stats.person_cards == 0
-    assert stats.topic_cards == 0
-    assert llm.derive_person_calls == 0
-    assert llm.derive_topic_calls == 0
+    assert [card["slug"] for card in repo.paper_cards_upserted] == [
+        "papers/new-1",
+        "papers/new-2",
+        "papers/new-3",
+    ]
+    assert stats.paper_cards == 3
 
 
 def test_summarize_all_skips_downstream_when_pending_papers_exist() -> None:
-    repo = FakeSummaryRepo()
-    repo.papers_for_summary = [build_summary_paper(slug="papers/new-1"), build_summary_paper(slug="papers/new-2")]
+    class PendingPapersRepo(FakeSummaryRepo):
+        def __init__(self) -> None:
+            super().__init__()
+            self._calls = 0
+
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            _ = force_all
+            self._calls += 1
+            if self._calls == 1:
+                return [build_summary_paper(slug="papers/new-1")]
+            return [build_summary_paper(slug="papers/new-2")]
+
+    repo = PendingPapersRepo()
     llm = FakeSummaryLLM()
     service = SummarizeService(repo=repo, llm=llm)
 
-    stats = service.run(card_scope="all", limit=1)
+    stats = service.run(card_scope="all")
 
     assert stats.paper_cards == 1
     assert stats.person_cards == 0
@@ -414,10 +429,10 @@ def test_summarize_all_uses_unsummarized_gate_when_force_all_lists_everything() 
     llm = FakeSummaryLLM()
     service = SummarizeService(repo=repo, llm=llm)
 
-    stats = service.run(card_scope="all", limit=1)
+    stats = service.run(card_scope="all")
 
-    assert stats.paper_cards == 1
-    assert stats.person_cards == 2
+    assert stats.paper_cards == 2
+    assert stats.person_cards == 3
     assert stats.topic_cards == 1
     assert llm.call_order == ["person", "topic"]
 
@@ -746,6 +761,15 @@ def test_summarize_rejects_invalid_card_scope() -> None:
 
     with pytest.raises(ValueError, match=r"Invalid card_scope"):
         SummarizeService(repo=repo, llm=llm).run(card_scope="invalid")
+
+
+@pytest.mark.parametrize("max_concurrency", [0, -1])
+def test_summarize_rejects_non_positive_max_concurrency(max_concurrency: int) -> None:
+    repo = FakeRepo()
+    llm = FakeLLM()
+
+    with pytest.raises(ValueError, match=r"max_concurrency"):
+        SummarizeService(repo=repo, llm=llm).run(max_concurrency=max_concurrency)
 
 
 def test_summarize_incremental_related_only_updates_affected_people_and_topics() -> None:

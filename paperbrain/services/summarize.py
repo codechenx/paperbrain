@@ -230,15 +230,23 @@ class SummarizeService:
         if not papers:
             return []
         indexed_results: list[dict | None] = [None] * len(papers)
+        first_error: Exception | None = None
         with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
             indexed_futures = {
                 executor.submit(self._summarize_paper, paper): index for index, paper in enumerate(papers)
             }
             for future in as_completed(indexed_futures):
                 index = indexed_futures[future]
-                card = future.result()
+                try:
+                    card = future.result()
+                except Exception as exc:
+                    if first_error is None:
+                        first_error = exc
+                    continue
                 indexed_results[index] = card
                 self.repo.upsert_paper_card(card)
+        if first_error is not None:
+            raise first_error
         return [card for card in indexed_results if card is not None]
 
     def _summarize_paper(self, paper: object) -> dict:

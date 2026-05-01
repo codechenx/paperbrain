@@ -348,29 +348,189 @@ def test_summarize_card_scope_all_maps_to_force_all() -> None:
     assert result.paper_cards == 2
 
 
-def test_summarize_default_skips_person_topic_when_pending_papers_exist() -> None:
+def test_summarize_default_processes_all_eligible_papers_in_single_run() -> None:
     repo = FakeSummaryRepo()
-    repo.paper_cards_existing = [{"slug": "papers/existing", "type": "article", "paper_type": "article"}]
-    repo.papers_for_summary = [build_summary_paper(slug="papers/new-1"), build_summary_paper(slug="papers/new-2")]
+    repo.papers_for_summary = [
+        build_summary_paper(slug="papers/new-1"),
+        build_summary_paper(slug="papers/new-2"),
+        build_summary_paper(slug="papers/new-3"),
+    ]
     llm = FakeSummaryLLM()
     service = SummarizeService(repo=repo, llm=llm)
 
-    stats = service.run(limit=1)
+    stats = service.run(max_concurrency=2)
 
-    assert stats.paper_cards == 1
-    assert stats.person_cards == 0
-    assert stats.topic_cards == 0
-    assert llm.derive_person_calls == 0
-    assert llm.derive_topic_calls == 0
+    assert sorted(card["slug"] for card in repo.paper_cards_upserted) == [
+        "papers/new-1",
+        "papers/new-2",
+        "papers/new-3",
+    ]
+    assert stats.paper_cards == 3
+
+
+def test_summarize_upserts_completed_cards_before_later_concurrent_failure() -> None:
+    from threading import Event
+
+    class PartialProgressRepo(FakeSummaryRepo):
+        def __init__(self) -> None:
+            super().__init__()
+            self.papers_for_summary = [
+                build_summary_paper(slug="papers/success"),
+                build_summary_paper(slug="papers/fail"),
+            ]
+
+    class PartialProgressLLM:
+        def __init__(self) -> None:
+            self._success_done = Event()
+
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            if metadata["slug"] == "papers/success":
+                self._success_done.set()
+                return {
+                    "slug": metadata["slug"],
+                    "type": "article",
+                    "paper_type": "article",
+                    "title": metadata["title"],
+                }
+            self._success_done.wait(timeout=1.0)
+            raise RuntimeError("boom")
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            _ = paper_cards
+            raise AssertionError("person derivation must not run after summarize failure")
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            _ = person_cards
+            raise AssertionError("topic derivation must not run after summarize failure")
+
+    repo = PartialProgressRepo()
+    llm = PartialProgressLLM()
+
+    with pytest.raises(RuntimeError, match="boom"):
+        SummarizeService(repo=repo, llm=llm).run(max_concurrency=2)
+
+    assert [card["slug"] for card in repo.paper_cards_upserted] == ["papers/success"]
+
+
+def test_summarize_drains_all_futures_before_raising_on_concurrent_failure() -> None:
+    import time
+    from threading import Event
+
+    class DrainAllFuturesRepo(FakeSummaryRepo):
+        def __init__(self) -> None:
+            super().__init__()
+            self.papers_for_summary = [
+                build_summary_paper(slug="papers/success-early"),
+                build_summary_paper(slug="papers/fail"),
+                build_summary_paper(slug="papers/success-late"),
+            ]
+
+    class DrainAllFuturesLLM:
+        def __init__(self) -> None:
+            self._failure_seen = Event()
+
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            slug = metadata["slug"]
+            if slug == "papers/fail":
+                self._failure_seen.set()
+                raise RuntimeError("boom")
+            if slug == "papers/success-late":
+                self._failure_seen.wait(timeout=1.0)
+                time.sleep(0.05)
+            return {
+                "slug": slug,
+                "type": "article",
+                "paper_type": "article",
+                "title": metadata["title"],
+            }
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            _ = paper_cards
+            raise AssertionError("person derivation must not run after summarize failure")
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            _ = person_cards
+            raise AssertionError("topic derivation must not run after summarize failure")
+
+    repo = DrainAllFuturesRepo()
+    llm = DrainAllFuturesLLM()
+
+    with pytest.raises(RuntimeError, match="boom"):
+        SummarizeService(repo=repo, llm=llm).run(max_concurrency=3)
+
+    assert sorted(card["slug"] for card in repo.paper_cards_upserted) == [
+        "papers/success-early",
+        "papers/success-late",
+    ]
+    assert len(repo.paper_cards_upserted) == 2
+
+
+def test_summarize_paper_scope_returns_successful_cards_in_input_order_under_concurrency() -> None:
+    from threading import Event
+
+    class OrderedResultRepo(FakeSummaryRepo):
+        def __init__(self) -> None:
+            super().__init__()
+            self.papers_for_summary = [
+                build_summary_paper(slug="papers/first"),
+                build_summary_paper(slug="papers/second"),
+            ]
+
+    class OrderedResultLLM:
+        def __init__(self) -> None:
+            self._second_started = Event()
+
+        def summarize_paper(self, paper_text: str, metadata: dict) -> dict:
+            _ = paper_text
+            slug = metadata["slug"]
+            if slug == "papers/first":
+                self._second_started.wait(timeout=1.0)
+            if slug == "papers/second":
+                self._second_started.set()
+            return {
+                "slug": slug,
+                "type": "article",
+                "paper_type": "article",
+                "title": metadata["title"],
+            }
+
+        def derive_person_cards(self, paper_cards: list[dict]) -> list[dict]:
+            _ = paper_cards
+            return []
+
+        def derive_topic_cards(self, person_cards: list[dict]) -> list[dict]:
+            _ = person_cards
+            return []
+
+    repo = OrderedResultRepo()
+    llm = OrderedResultLLM()
+    service = SummarizeService(repo=repo, llm=llm)
+
+    cards = service._summarize_and_upsert_papers(force_all=True, max_concurrency=2)
+
+    assert [card["slug"] for card in cards] == ["papers/first", "papers/second"]
 
 
 def test_summarize_all_skips_downstream_when_pending_papers_exist() -> None:
-    repo = FakeSummaryRepo()
-    repo.papers_for_summary = [build_summary_paper(slug="papers/new-1"), build_summary_paper(slug="papers/new-2")]
+    class PendingPapersRepo(FakeSummaryRepo):
+        def __init__(self) -> None:
+            super().__init__()
+            self._calls = 0
+
+        def list_papers_for_summary(self, force_all: bool) -> list[FakePaper]:
+            _ = force_all
+            self._calls += 1
+            if self._calls == 1:
+                return [build_summary_paper(slug="papers/new-1")]
+            return [build_summary_paper(slug="papers/new-2")]
+
+    repo = PendingPapersRepo()
     llm = FakeSummaryLLM()
     service = SummarizeService(repo=repo, llm=llm)
 
-    stats = service.run(card_scope="all", limit=1)
+    stats = service.run(card_scope="all")
 
     assert stats.paper_cards == 1
     assert stats.person_cards == 0
@@ -414,10 +574,10 @@ def test_summarize_all_uses_unsummarized_gate_when_force_all_lists_everything() 
     llm = FakeSummaryLLM()
     service = SummarizeService(repo=repo, llm=llm)
 
-    stats = service.run(card_scope="all", limit=1)
+    stats = service.run(card_scope="all")
 
-    assert stats.paper_cards == 1
-    assert stats.person_cards == 2
+    assert stats.paper_cards == 2
+    assert stats.person_cards == 3
     assert stats.topic_cards == 1
     assert llm.call_order == ["person", "topic"]
 
@@ -746,6 +906,15 @@ def test_summarize_rejects_invalid_card_scope() -> None:
 
     with pytest.raises(ValueError, match=r"Invalid card_scope"):
         SummarizeService(repo=repo, llm=llm).run(card_scope="invalid")
+
+
+@pytest.mark.parametrize("max_concurrency", [0, -1])
+def test_summarize_rejects_non_positive_max_concurrency(max_concurrency: int) -> None:
+    repo = FakeRepo()
+    llm = FakeLLM()
+
+    with pytest.raises(ValueError, match=r"max_concurrency"):
+        SummarizeService(repo=repo, llm=llm).run(max_concurrency=max_concurrency)
 
 
 def test_summarize_incremental_related_only_updates_affected_people_and_topics() -> None:

@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Protocol
 
 from paperbrain.models import SummaryStats
@@ -103,13 +104,19 @@ class SummarizeService:
         self.repo = repo
         self.llm = llm
 
-    def run(self, card_scope: str | None = None, limit: int | None = None) -> SummaryStats:
+    def run(
+        self,
+        card_scope: str | None = None,
+        max_concurrency: int = 1,
+    ) -> SummaryStats:
+        if max_concurrency <= 0:
+            raise ValueError("max_concurrency must be a positive integer")
         normalized_scope = card_scope.strip().lower() if card_scope is not None else None
         if normalized_scope is not None and normalized_scope not in _SUPPORTED_CARD_SCOPES:
             allowed = ", ".join(sorted(_SUPPORTED_CARD_SCOPES))
             raise ValueError(f"Invalid card_scope '{card_scope}'. Allowed values: {allowed}")
         if normalized_scope == "paper":
-            paper_cards = self._summarize_and_upsert_papers(force_all=True, limit=limit)
+            paper_cards = self._summarize_and_upsert_papers(force_all=True, max_concurrency=max_concurrency)
             return SummaryStats(paper_cards=len(paper_cards), person_cards=0, topic_cards=0)
 
         if normalized_scope == "person":
@@ -130,7 +137,7 @@ class SummarizeService:
             return SummaryStats(paper_cards=0, person_cards=0, topic_cards=len(topic_cards))
 
         if normalized_scope == "all":
-            paper_cards = self._summarize_and_upsert_papers(force_all=True, limit=limit)
+            paper_cards = self._summarize_and_upsert_papers(force_all=True, max_concurrency=max_concurrency)
             if self._has_pending_papers(force_all=False, exclude_slugs=self._card_slugs(paper_cards)):
                 return SummaryStats(paper_cards=len(paper_cards), person_cards=0, topic_cards=0)
             source_article_cards = self._article_cards(self._paper_cards_for_all_scope(paper_cards))
@@ -146,7 +153,7 @@ class SummarizeService:
                 topic_cards=len(topic_cards),
             )
 
-        paper_cards = self._summarize_and_upsert_papers(force_all=False, limit=limit)
+        paper_cards = self._summarize_and_upsert_papers(force_all=False, max_concurrency=max_concurrency)
         if self._has_pending_papers(force_all=False, exclude_slugs=self._card_slugs(paper_cards)):
             return SummaryStats(paper_cards=len(paper_cards), person_cards=0, topic_cards=0)
         if not paper_cards:
@@ -218,24 +225,40 @@ class SummarizeService:
             topic_cards=len(topic_cards),
         )
 
-    def _summarize_and_upsert_papers(self, *, force_all: bool, limit: int | None = None) -> list[dict]:
+    def _summarize_and_upsert_papers(self, *, force_all: bool, max_concurrency: int) -> list[dict]:
         papers = self.repo.list_papers_for_summary(force_all)
-        if limit is not None and limit > 0:
-            papers = papers[:limit]
-        paper_cards: list[dict] = []
-        for paper in papers:
-            metadata = {
-                "slug": paper.slug,
-                "title": paper.title,
-                "journal": paper.journal,
-                "year": paper.year,
-                "authors": paper.authors,
-                "corresponding_authors": paper.corresponding_authors,
+        if not papers:
+            return []
+        indexed_results: list[dict | None] = [None] * len(papers)
+        first_error: Exception | None = None
+        with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
+            indexed_futures = {
+                executor.submit(self._summarize_paper, paper): index for index, paper in enumerate(papers)
             }
-            card = self.llm.summarize_paper(paper.full_text, metadata)
-            self.repo.upsert_paper_card(card)
-            paper_cards.append(card)
-        return paper_cards
+            for future in as_completed(indexed_futures):
+                index = indexed_futures[future]
+                try:
+                    card = future.result()
+                except Exception as exc:
+                    if first_error is None:
+                        first_error = exc
+                    continue
+                indexed_results[index] = card
+                self.repo.upsert_paper_card(card)
+        if first_error is not None:
+            raise first_error
+        return [card for card in indexed_results if card is not None]
+
+    def _summarize_paper(self, paper: object) -> dict:
+        metadata = {
+            "slug": paper.slug,
+            "title": paper.title,
+            "journal": paper.journal,
+            "year": paper.year,
+            "authors": paper.authors,
+            "corresponding_authors": paper.corresponding_authors,
+        }
+        return self.llm.summarize_paper(paper.full_text, metadata)
 
     def _has_pending_papers(self, *, force_all: bool, exclude_slugs: list[str] | None = None) -> bool:
         excluded = set(exclude_slugs or [])

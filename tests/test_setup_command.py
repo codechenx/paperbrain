@@ -1437,9 +1437,9 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
             calls["repo"] = repo
             calls["llm_seen"] = isinstance(llm, FakeSummaryAdapter)
 
-        def run(self, *, card_scope: str | None, limit: int | None = None) -> SummaryStats:
+        def run(self, *, card_scope: str | None, max_concurrency: int = 1) -> SummaryStats:
             calls["run_card_scope"] = card_scope
-            calls["run_limit"] = limit
+            calls["run_max_concurrency"] = max_concurrency
             return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
 
     @contextmanager
@@ -1470,7 +1470,69 @@ def test_cli_summarize_uses_runtime_config_and_reports_counts(monkeypatch: Any, 
     assert calls["repo"] is fake_repo
     assert calls["llm_seen"] is True
     assert calls["run_card_scope"] is None
-    assert calls["run_limit"] == 1
+    assert calls["run_max_concurrency"] == 1
+
+
+def test_cli_summarize_passes_max_concurrency(monkeypatch: Any, tmp_path: Path) -> None:
+    calls: dict[str, Any] = {}
+    config_path = tmp_path / "config" / "paperbrain.conf"
+    config = AppConfig(
+        database_url="postgresql://localhost:5432/paperbrain",
+        openai_api_key="sk-runtime",
+        summary_model="openai:gpt-4.1-mini",
+        embedding_model="text-embedding-3-small",
+    )
+
+    class FakeConfigStore:
+        def __init__(self, path: Path) -> None:
+            calls["config_path"] = path
+
+        def load(self) -> AppConfig:
+            return config
+
+    class FakeOpenAIClient:
+        def __init__(self, api_key: str) -> None:
+            calls["api_key"] = api_key
+
+    class FakeSummaryAdapter:
+        def __init__(self, *, client: Any, model: str) -> None:
+            calls["summary_model"] = model
+            calls["summary_client_seen"] = isinstance(client, FakeOpenAIClient)
+
+    class FakeSummarizeService:
+        def __init__(self, *, repo: Any, llm: Any) -> None:
+            calls["repo"] = repo
+            calls["llm_seen"] = isinstance(llm, FakeSummaryAdapter)
+
+        def run(self, *, card_scope: str | None, max_concurrency: int = 1) -> SummaryStats:
+            calls["run_card_scope"] = card_scope
+            calls["run_max_concurrency"] = max_concurrency
+            return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
+
+    @contextmanager
+    def fake_connect(database_url: str, *, autocommit: bool = False) -> Iterator[str]:
+        calls["connect"] = (database_url, autocommit)
+        yield "fake-connection"
+
+    fake_repo = object()
+
+    monkeypatch.setattr("paperbrain.cli.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.ConfigStore", FakeConfigStore)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAIClient", FakeOpenAIClient)
+    monkeypatch.setattr("paperbrain.summary_provider.OpenAISummaryAdapter", FakeSummaryAdapter)
+    monkeypatch.setattr("paperbrain.cli.SummarizeService", FakeSummarizeService)
+    monkeypatch.setattr("paperbrain.cli.connect", fake_connect)
+    monkeypatch.setattr("paperbrain.cli.PostgresRepo", lambda connection: fake_repo if connection == "fake-connection" else None)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["summarize", "--max-concurrency", "3", "--config-path", str(config_path)],
+    )
+
+    assert result.exit_code == 0
+    assert calls["run_card_scope"] is None
+    assert calls["run_max_concurrency"] == 3
 
 
 def test_cli_summary_alias_is_not_available() -> None:
@@ -1492,12 +1554,31 @@ def test_cli_summarize_rejects_invalid_card_scope() -> None:
     assert "Allowed values: all, paper, person, topic" in result.output
 
 
+def test_cli_summarize_rejects_non_positive_max_concurrency() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["summarize", "--max-concurrency", "0"])
+
+    assert result.exit_code == 2
+    assert isinstance(result.exception, SystemExit)
+    assert result.exception.code == 2
+    assert "Invalid value for '--max-concurrency'" in result.output
+    assert "Must be a positive integer" in result.output
+
+
 def test_cli_summarize_rejects_legacy_force_all_flag() -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["summarize", "--force-all"])
 
     assert result.exit_code != 0
     assert "No such option: --force-all" in result.output
+
+
+def test_cli_summarize_rejects_legacy_limit_flag() -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["summarize", "--limit", "2"])
+
+    assert result.exit_code != 0
+    assert "No such option: --limit" in result.output
 
 
 def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
@@ -1544,9 +1625,9 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
             calls["repo"] = repo
             calls["llm_seen"] = isinstance(llm, FakeGeminiSummaryAdapter)
 
-        def run(self, *, card_scope: str | None, limit: int | None = None) -> SummaryStats:
+        def run(self, *, card_scope: str | None, max_concurrency: int = 1) -> SummaryStats:
             calls["run_card_scope"] = card_scope
-            calls["run_limit"] = limit
+            calls["run_max_concurrency"] = max_concurrency
             return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
 
     @contextmanager
@@ -1587,7 +1668,7 @@ def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
     assert calls["repo"] is fake_repo
     assert calls["llm_seen"] is True
     assert calls["run_card_scope"] == "all"
-    assert calls["run_limit"] == 1
+    assert calls["run_max_concurrency"] == 1
 
 
 def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
@@ -1635,9 +1716,9 @@ def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
             calls["repo"] = repo
             calls["llm_seen"] = isinstance(llm, FakeOllamaSummaryAdapter)
 
-        def run(self, *, card_scope: str | None, limit: int | None = None) -> SummaryStats:
+        def run(self, *, card_scope: str | None, max_concurrency: int = 1) -> SummaryStats:
             calls["run_card_scope"] = card_scope
-            calls["run_limit"] = limit
+            calls["run_max_concurrency"] = max_concurrency
             return SummaryStats(paper_cards=3, person_cards=2, topic_cards=1)
 
     @contextmanager
@@ -1678,7 +1759,7 @@ def test_cli_summarize_routes_ollama_models_through_ollama_summary_adapter(
     assert calls["repo"] is fake_repo
     assert calls["llm_seen"] is True
     assert calls["run_card_scope"] == "all"
-    assert calls["run_limit"] == 1
+    assert calls["run_max_concurrency"] == 1
 
 def test_runtime_prefixed_provider_positive_paths(monkeypatch: Any, tmp_path: Path) -> None:
     # openai positive path

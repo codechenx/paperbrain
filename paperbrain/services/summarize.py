@@ -103,7 +103,13 @@ class SummarizeService:
         self.repo = repo
         self.llm = llm
 
-    def run(self, card_scope: str | None = None, limit: int | None = None) -> SummaryStats:
+    def run(
+        self,
+        card_scope: str | None = None,
+        max_concurrency: int = 1,
+        limit: int | None = None,
+    ) -> SummaryStats:
+        _ = max_concurrency
         normalized_scope = card_scope.strip().lower() if card_scope is not None else None
         if normalized_scope is not None and normalized_scope not in _SUPPORTED_CARD_SCOPES:
             allowed = ", ".join(sorted(_SUPPORTED_CARD_SCOPES))

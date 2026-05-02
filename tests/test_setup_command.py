@@ -1535,12 +1535,14 @@ def test_cli_summarize_passes_max_concurrency(monkeypatch: Any, tmp_path: Path) 
     assert calls["run_max_concurrency"] == 3
 
 
-def test_cli_summary_alias_is_not_available() -> None:
+def test_cli_summarize_help_shows_canonical_options() -> None:
     runner = CliRunner()
-    result = runner.invoke(app, ["summary"])
+    result = runner.invoke(app, ["summarize", "--help"])
 
-    assert result.exit_code != 0
-    assert "No such command 'summary'" in result.output
+    assert result.exit_code == 0
+    assert "--card-scope" in result.output
+    assert "--max-concurrency" in result.output
+    assert "--config-path" in result.output
 
 
 def test_cli_summarize_rejects_invalid_card_scope() -> None:
@@ -1563,22 +1565,6 @@ def test_cli_summarize_rejects_non_positive_max_concurrency() -> None:
     assert result.exception.code == 2
     assert "Invalid value for '--max-concurrency'" in result.output
     assert "Must be a positive integer" in result.output
-
-
-def test_cli_summarize_rejects_legacy_force_all_flag() -> None:
-    runner = CliRunner()
-    result = runner.invoke(app, ["summarize", "--force-all"])
-
-    assert result.exit_code != 0
-    assert "No such option: --force-all" in result.output
-
-
-def test_cli_summarize_rejects_legacy_limit_flag() -> None:
-    runner = CliRunner()
-    result = runner.invoke(app, ["summarize", "--limit", "2"])
-
-    assert result.exit_code != 0
-    assert "No such option: --limit" in result.output
 
 
 def test_cli_summarize_routes_gemini_models_through_gemini_summary_adapter(
